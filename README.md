@@ -335,6 +335,33 @@ boss-battle:
 
 ---
 
+## bStats 匿名统计
+
+本插件接入了 [bStats](https://bstats.org)，用于收集**匿名**的服务器信息：
+
+**收集什么**
+- 服务器在线人数、Minecraft 版本、Java 版本、服务端类型（Paper/Purpur/Folia…）
+- 插件配置项的分布（比如「有多少服务器开了自助开关」）
+- 保护时长区间、是否装了 PlaceholderAPI / Residence 等
+
+**不收集什么**
+- ❌ 玩家名、UUID、IP
+- ❌ 聊天内容
+- ❌ 任何能定位到你服务器或玩家的信息
+
+**关闭方法**
+
+```yaml
+metrics:
+  enabled: false    # 设为 false 就完全不再发送任何数据
+```
+
+数据看板：https://bstats.org/plugin/bukkit/NewbieProtect
+
+> 提示：如果你要自己注册 bStats 统计页，在 `MetricsManager.PLUGIN_ID` 填入你拿到的数字 ID 即可。
+
+---
+
 ## PlaceholderAPI 变量
 
 装了 [PlaceholderAPI](https://www.spigotmc.org/resources/placeholderapi.6245/) 后，

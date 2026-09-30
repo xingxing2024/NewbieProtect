@@ -99,6 +99,9 @@ public final class NewbieProtect extends JavaPlugin {
         // 10. 注册 PlaceholderAPI 变量扩展（软依赖）
         registerPlaceholders();
 
+        // 11. bStats 匿名统计（可在 config.yml 关闭）
+        com.newbie.protect.metrics.MetricsManager.init(this);
+
         getLogger().info("NewbieProtect 已启用"
                 + " (Folia=" + SchedulerUtils.isFolia()
                 + ", 保护=" + (isProtectEnabled() ? "开" : "关")
