@@ -1,0 +1,359 @@
+# ===================================================================
+#  NewbieProtect - 新人保护插件
+#  首次进入服务器的玩家，在累计在线时长用满之前免受伤害
+# ===================================================================
+
+# ===================================================================
+#  【PlaceholderAPI 变量速查表】（装 PAPI 后可用）
+#  下面所有文本里都能用插件自己的占位符 + 任意 PAPI 变量，例如：
+#    boss-bar.title: "&e%time% &7| 金币 %vault_eco_balance%"
+#
+#  ── 时间类 ──
+#   %newbieprotect_time%            剩余时间（如 1时23分45秒）
+#   %newbieprotect_seconds%         剩余秒数
+#   %newbieprotect_minutes%         剩余分钟（向上取整）
+#   %newbieprotect_hours%           剩余小时（取整）
+#   %newbieprotect_used%            已消耗时间
+#   %newbieprotect_used_seconds%    已消耗秒数
+#   %newbieprotect_total%           保护总时长
+#   %newbieprotect_total_seconds%   总时长秒数
+#
+#  ── 状态类 ──
+#   %newbieprotect_protected%       此刻是否受保护 true/false
+#   %newbieprotect_paused%          此刻是否暂停计时 true/false
+#   %newbieprotect_pause_reason%    暂停原因文案
+#   %newbieprotect_self_disabled%   是否被玩家自己关闭
+#   %newbieprotect_admin_paused%    是否被管理员冻结
+#   %newbieprotect_finished%        是否已用尽保护
+#   %newbieprotect_status%          状态中文（保护中/已关闭/已冻结/暂停中/已结束/保护中(离线)）
+#   %newbieprotect_bossbar%         Boss 条是否开启 true/false
+#   %newbieprotect_enabled%         插件总开关
+#
+#  ── 进度 / 时间戳 ──
+#   %newbieprotect_percent%         剩余百分比（1 位小数）
+#   %newbieprotect_percent_int%     剩余百分比（整数）
+#   %newbieprotect_bar%             带颜色进度条（12 格）
+#   %newbieprotect_bar_symbol%      纯符号进度条
+#   %newbieprotect_first_join%      首次进服时间
+#   %newbieprotect_first_join_ago%  距首次进服天数
+#
+#  ── 消息/Boss 条内可用的插件占位符 ──
+#   %time% %seconds% %player% %state% %reason% %battle% %timing% %toggle-cmd%
+# ===================================================================
+
+# 配置版本（请勿手改；插件用它判断你的配置是否缺少新增项）
+config-version: 2
+
+# 功能总开关
+enabled: true
+
+protection:
+  # 保护时长（只计算在线时间，玩家下线后暂停，不消耗）
+  # 单位：分钟。默认 120 分钟 = 2 小时
+  #   30  = 半小时
+  #   120 = 2 小时
+  #   600 = 10 小时
+  # 说明：即使玩家一直在线保护也不会超过下面的 max-absolute-days
+  duration-minutes: 120
+
+  # 【安全兜底】绝对上限（天）
+  # 从「首次进服」起算，超过这个天数后强制结束保护。
+  # 作用：万一计时器因为异常卡住，也不会让玩家一直处于无敌状态。
+  # 设为 0 表示不启用兜底（不推荐）。
+  max-absolute-days: 30
+
+  # -------------------------------------------------------------------
+  #  管理员操作上限
+  #  限制 /newbie set | add | grant 能给玩家的最大时长（防手滑把关打到 999 天）
+  # -------------------------------------------------------------------
+  admin-limit:
+    # 是否启用上限限制
+    #   false = 不限制（管理员可以任意加）
+    #   true  = 启用下面的 max-seconds 限制
+    enabled: false
+
+    # 允许的最大剩余时长（秒）
+    #   -1 = 不限制（等同于 enabled: false）
+    # 常用换算：
+    #   3600   = 1 小时
+    #   21600  = 6 小时
+    #   86400  = 1 天
+    #   604800 = 7 天
+    #   2592000 = 30 天
+    max-seconds: -1
+
+    # 超过上限时的提示（%limit% = 上限时长，%time% = 你输入的时间）
+    message-exceeded: "&c超过上限！单次最多只能设置 &e%limit%&c（你输入了 &f%time%&c）。"
+
+  # 免哪些伤害
+  #   防怪物：僵尸 / 骷髅 / 苦力怕 / 蜘蛛等 LivingEntity 造成的伤害
+  block-mob-damage: true
+  #   防玩家互殴（PVP）：其他玩家造成的伤害
+  block-player-damage: true
+  #   是否连投射物也算（箭 / 雪球 / 三叉戟等）
+  block-projectile-damage: true
+
+  # 保护期内是否让玩家免疫「怪物主动攻击」（怪物不会锁定新人）
+  # true  = 怪物完全不理会新人（更友好）
+  # false = 怪物仍会攻击，但打不掉血
+  mob-ignore-protected-player: true
+
+  # 保护期是否在「首次进服」时自动开始
+  start-on-first-join: true
+
+# -------------------------------------------------------------------
+#  打 Boss 无效化
+#  防止新人靠保护摸 Boss 偷奖励：
+#  攻击 Boss → 本次战斗中保护失效 + 计时暂停 → 脱战后自动恢复
+# -------------------------------------------------------------------
+boss-battle:
+  # 是否启用
+  enabled: true
+
+  # 是否在战斗中「暂停计时」（推荐 true）
+  # true  = 战斗中保护时间不流逝，脱战后继续倒计时
+  # false = 战斗中时间照常计算
+  pause-timer-in-battle: true
+
+  # 战斗中是否还免伤？
+  # false（推荐）= 战斗中不再免疫怪物/玩家伤害（真正「无效化」）
+  # true         = 战斗中仍免伤（只暂停计时，算温和版）
+  protect-in-battle: false
+
+  # 脱战判定：多久没再攻击 Boss 就算脱离战斗（秒）
+  battle-timeout-seconds: 15
+
+  # 内置 Boss 名单（带 Boss 血条的 + 高威胁精英）
+  builtin-bosses:
+    - ENDER_DRAGON
+    - WITHER
+    - WARDEN
+    - ELDER_GUARDIAN
+    - RAVAGER
+    - PIGLIN_BRUTE
+
+  # 额外自定义的 Boss 实体类型（填 EntityType 名，如 WITHER_SKELETON）
+  custom-bosses: []
+
+  # 是否把「带 Boss 血条的实体」都算 Boss（末影龙/凋灵等）
+  count-bossbar-entities: true
+
+  # 是否把「自定义名称里含 BOSS/boss 的实体」也算 Boss
+  # （很多服务端用改名的方式来标记 Boss 怪）
+  count-named-bosses: true
+
+# -------------------------------------------------------------------
+#  玩家自助开关保护
+#  玩家可用 /newbie off 自己关掉保护、/newbie on 重新开启
+# -------------------------------------------------------------------
+self-toggle:
+  # 是否允许玩家自助开关（false = 只有管理员能改）
+  enabled: true
+
+  # 关闭保护期间，保护时长是否照常计算？
+  #   true  = 照常计算（推荐）—— 关掉保护并不能省下时间，
+  #           防止玩家一直关着保护、把时长留到以后再用
+  #   false = 关闭期间暂停计时（剩余时间被冻结）
+  count-while-disabled: true
+
+# -------------------------------------------------------------------
+#  世界列表：在某些世界里暂停保护计时
+#  典型用途：把主城 / 大厅 / 资源世界的挂机时间不算进保护
+# -------------------------------------------------------------------
+world-list:
+  # 是否启用世界规则（列表为空时自动不生效）
+  enabled: true
+
+  # 匹配模式
+  #   allow = 只有「列表内」的世界才暂停计时
+  #   deny  = 「列表内」的世界除外，其他世界都暂停计时
+  mode: allow
+
+  # 世界名列表（不区分大小写）
+  # 例：worlds: [lobby, spawn, hub]
+  worlds: []
+
+  # 世界类型列表（不区分大小写）—— 一次匹配所有同类世界
+  #   NORMAL / NETHER / THE_END / CUSTOM
+  # 例：world-types: [NETHER]  → 所有下界世界都暂停计时
+  world-types: []
+
+  # 【暂停世界里】保护时长是否照常计算？
+  #   false（推荐）= 暂停，剩余时间不消耗（挂机不掉时间）
+  #   true         = 照常扣时间（只是换了个地方，规则不变）
+  count-while-in-paused-world: false
+
+  # 【暂停世界里】是否仍然免伤？
+  #   false（默认）= 暂停计时 + 取消免伤（严格：只有计时中的世界才受保护）
+  #   true         = 暂停计时但仍然免伤（在大厅挂机也不会被打）
+  protect-in-paused-world: false
+
+# -------------------------------------------------------------------
+#  领地：在自己的 Residence 领地里暂停计时
+#  需要服务器安装 Residence（没装会自动跳过，不报错）
+# -------------------------------------------------------------------
+residence:
+  # 是否启用领地暂停
+  enabled: true
+
+  # 是否只有「领地房主本人」才享受暂停
+  #   true  = 只有房主自己站在自己领地里才暂停
+  #   false = 任何人在任意领地里都暂停（含成员/访客/别人的领地）
+  owner-only: true
+
+  # 【领地里】保护时长是否照常计算？
+  #   false（推荐）= 暂停，待在自己家不掉时间
+  #   true         = 照常扣时间
+  count-while-inside: false
+
+  # 【领地里】是否仍然免伤？
+  #   false（默认）= 暂停计时 + 取消免伤
+  #   true         = 暂停计时但仍然免伤
+  protect-in-own-residence: false
+
+# Boss 条倒计时（在屏幕上方实时显示剩余保护时间，归零后自动消失）
+boss-bar:
+  enabled: true
+  # 是否允许玩家用 /newbie bar 自己开关 Boss 条
+  # （防止 Boss 条一直挂在屏幕上骚扰玩家）
+  allow-player-toggle: true
+  # 标题，可用变量：
+  #   %time%        剩余时间（自动格式化为 1时2分3秒）
+  #   %seconds%     剩余秒数
+  #   %player%      玩家名
+  #   %state%       当前状态文案（见下方 state-on / state-disabled）
+  #   %timing%      计时说明（照常计算 / 已暂停，按 count-while-disabled）
+  #   %toggle-cmd%  on 或 off（当前该输入哪个指令来切换）
+  #   %reason%      暂停原因（暂停状态时）
+  #   %battle%      脱战剩余秒数（Boss 战斗中）
+  #   以及任意 PAPI 变量，如 %newbieprotect_percent% / %vault_eco_balance%
+  title: "&b新人保护中 &7| &e剩余 %time% &8| &7输入 &f/newbie off &7可关闭"
+  # 玩家自己关闭保护后的标题（会同时告诉玩家「时间还在走」）
+  title-disabled: "&c保护已关闭 &8| &e剩余 %time% &8| &7(%timing%) &8| &7输入 &f/newbie on &7可开启"
+  # 处于「暂停计时」区域（世界列表 / 自己的领地）时的标题
+  #   %reason% 暂停原因（如「世界 lobby 内不计时」「自己领地内不计时」）
+  title-paused: "&7(%reason%) &8| &e剩余 %time% &8| &7(%timing%)"
+  # %state% 的取值
+  state-on: "保护中"
+  state-disabled: "已关闭"
+  # %timing% 的取值（自助关闭时使用）
+  timing-note-counting: "关闭期间保护时间照常计算"
+  timing-note-paused: "关闭期间计时已暂停"
+  # %timing% 的取值（暂停区域内使用）
+  pause-note-counting: "此区域不计时（剩余时间保留）"
+  pause-note-paused: "此处保护计时已暂停"
+  # 颜色：PINK / BLUE / RED / GREEN / YELLOW / PURPLE / WHITE
+  color: BLUE
+  # 玩家自己关闭保护时改用这个颜色（提醒他当前是「裸奔」状态）
+  color-disabled: RED
+  # 处于暂停计时区域时的颜色
+  color-paused: YELLOW
+  # 打 Boss 战斗中的颜色（保护暂时失效）
+  color-boss-battle: RED
+  # 打 Boss 战斗中的标题
+  #   %battle% 脱战剩余秒数
+  title-boss-battle: "&4Boss 战斗中 &7保护失效 &8| &e剩余 %time% &8| &7脱战 %battle% 秒后恢复"
+  # 样式：SOLID / SEGMENTED_6 / SEGMENTED_10 / SEGMENTED_12 / SEGMENTED_20
+  style: SEGMENTED_10
+  # 进度条按什么比例显示
+  #   total = 按总时长（刚开始是满的，随时间减少）
+  #   fixed = 固定满格
+  progress-mode: total
+
+# 消息（支持 & 颜色代码）
+messages:
+  prefix: "&8[&b新人保护&8] &r"
+  # 进服时提示（%time% = 剩余保护时长）
+  join-protected: "&a你正处于新人保护期，还有 &e%time% &a。期间不会被怪物和玩家伤害。"
+  # 进服时提示（已经过期）
+  join-expired: ""
+  # 查询剩余时间
+  query-self: "&a你的新人保护剩余：&e%time%"
+  # 查询剩余时间（自己已关闭保护时）
+  query-self-disabled: "&e你的新人保护已关闭 &8| &e剩余 %time% &8| &7%timing% &8| &7输入 &f/newbie on &7可开启"
+  # 查询他人（管理员）
+  query-other: "&a玩家 &f%player% &a的新人保护剩余：&e%time%"
+  # 已过期
+  expired: "&7你的新人保护已结束，祝游戏愉快！"
+  # 玩家自己关闭保护成功（%timing% = 计时说明）
+  self-off: "&e你已关闭新人保护。&7%timing%&7。当前剩余 &e%time%&7。输入 &f/newbie on &7可重新开启。"
+  # 玩家自己重新开启保护
+  self-on: "&a你已重新开启新人保护，剩余 &e%time%&a。"
+  # 进服时发现自己上次关着保护
+  join-self-disabled: "&e你上次关闭了新人保护，当前剩余 &e%time%&e。&7%timing%&7。输入 &f/newbie on &7可重新开启。"
+  # 状态没变化
+  self-already-off: "&7你的新人保护已经是关闭状态了。输入 &f/newbie on &7可重新开启。"
+  self-already-on: "&7你的新人保护本来就是开启的。输入 &f/newbie off &7可关闭。"
+  # 服务器关闭了自助开关
+  self-toggle-disabled: "&c本服务器未开放玩家自助关闭保护。"
+  # 保护已结束，无法再开关
+  self-toggle-expired: "&c你的新人保护已结束，无法再开关。"
+  # 暂停原因（%world% = 世界名），用于 Boss 条 %reason% 和管理员查询
+  pause-reason-world: "世界 %world% 内不计时"
+  pause-reason-residence: "自己领地内不计时"
+  # 玩家在暂停区域查询自己的时间
+  query-self-paused: "&e你的新人保护剩余：&e%time% &8| &7(%reason%)"
+  # 管理员命令反馈
+  need-player: "&c请输入玩家名：&f/newbie <子命令> <玩家>"
+  need-player-time: "&c请输入玩家名和时间：&f/newbie set <玩家> <时间> &7(如 1h30m)"
+  bad-time: "&c时间格式不正确：&f%input% &7可用写法：&f1h30m &7/ &f45m &7/ &f90s &7/ &f2d"
+  admin-set: "&a已把 &f%player% &a的剩余保护时间设为 &e%time%&a。"
+  admin-add: "&a已给 &f%player% &a增加 &e%delta% &a，现在剩余 &e%time%&a。"
+  admin-take: "&a已从 &f%player% &a扣除 &e%delta% &a，现在剩余 &e%time%&a。"
+  admin-paused-msg: "&e已冻结 &f%player% &e的保护计时（不再倒计时，也不再免伤）。输入 &f/newbie resume %player% &e可恢复。"
+  admin-resumed-msg: "&a已恢复 &f%player% &a的保护计时。"
+  admin-opened: "&a已强制开启 &f%player% &a的保护，剩余 &e%time%&a。"
+  admin-closed: "&c已强制关闭 &f%player% &c的保护（不再免伤，时间照常计算）。"
+  cleanup-done: "&a已清理 &f%count% &a条 Boss 条，并保存数据。"
+  # 配置补全（/newbie fixconfig）
+  fixconfig-done: "&a已补全 &f%count% &a项配置（追加在 config.yml 末尾）。"
+  fixconfig-none: "&7配置已经很完整，没有需要补全的项。"
+  # 管理员操作超上限（protection.admin-limit）
+  admin-limit-exceeded: "&c超过上限！单次最多只能设置 &e%limit%&c（你输入了 &f%time%&c）。"
+  # 打 Boss 无效化提示（%boss% = Boss 名字，%timing% = 计时说明）
+  boss-battle-enter: "&c你攻击了 &f%boss% &c！&7本次战斗中新人保护暂时失效（%timing%）。脱战后自动恢复。"
+  # Boss 条开关（/newbie bar）
+  bar-hidden: "&7已关闭 Boss 条显示。输入 &f/newbie bar &7可重新打开。"
+  bar-shown: "&a已重新显示 Boss 条。"
+  bar-toggle-disabled: "&c本服务器不允许玩家自行开关 Boss 条。"
+  bar-toggle-failed: "&7Boss 条状态已经是这样了。"
+  # 保护结束倒计时提醒（剩余多少秒时提醒，见下方 remind-seconds）
+  ending-soon: "&e注意：你的新人保护将在 &c%time% &e后结束。"
+  # 管理员命令反馈
+  reload-done: "&a配置文件已重载。"
+  cleared: "&a已清除玩家 &f%player% &a的新人保护。"
+  granted: "&a已给玩家 &f%player% &a重置新人保护（&e%time%&a）。"
+  player-not-found: "&c找不到该玩家（数据不存在）。"
+  player-only: "&c该命令只能由玩家执行。"
+  no-permission: "&c你没有权限执行此操作。"
+  usage: "&e用法: &f/newbie &7| &f/newbie on|off &7| &f/newbie <玩家> &7| &f/newbie reload|clear|grant &7(管理员)"
+  # 管理员执行 /newbie help 时额外显示
+  usage-admin:
+    - "&7---- &b玩家命令 &7----"
+    - "&f/newbie &7- 查看自己的剩余保护时间"
+    - "&f/newbie off &7- 自己关闭保护（不免伤，时间照常计算）"
+    - "&f/newbie on &7- 自己重新开启保护"
+    - "&7---- &b管理员命令 &7----"
+    - "&f/newbie info <玩家> &7- 查看某人保护详情"
+    - "&f/newbie clear <玩家> &7- 清除记录（下次进服重新算新人）"
+    - "&f/newbie grant <玩家> &7- 重置为满时长保护"
+    - "&f/newbie list &7- 查看已记录人数 / Boss 条数量"
+    - "&f/newbie cleanup &7- 应急：强制清掉所有 Boss 条并保存"
+    - "&f/newbie reload &7- 重载配置（含自动补生成 config.yml）"
+
+# 保护期结束前提醒（秒）。留空 [] 表示不提醒
+remind-seconds:
+  - 300
+  - 60
+  - 10
+
+# 保护期内是否禁止以下行为（不会导致伤害，但可能影响平衡，默认关闭）
+extra:
+  # 保护期内禁止攻击其他玩家（防止新人先手打人）
+  block-attack-others: false
+  # 保护期内禁止破坏方块
+  block-break: false
+  # 保护期内禁止放置方块
+  block-place: false
+  # 登录 / 退出时是否在控制台打印（调试用）
+  log-debug: false

@@ -1,0 +1,17 @@
+name: NewbieProtect
+version: '${project.version}'
+main: com.newbie.protect.NewbieProtect
+api-version: 1.13
+folia-supported: true
+author: NewbieProtect
+description: 新人保护 - 首次进入服务器的玩家在一定时长内免受怪物与玩家伤害
+commands:
+  newbie:
+    aliases:
+      - nb
+      - newb
+    description: 查看新人保护剩余时间
+permissions:
+  newbieprotect.admin:
+    default: op
+    description: 使用管理命令（清除/设置保护、重载配置）
