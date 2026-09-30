@@ -1,0 +1,236 @@
+# ===================================================================
+#  NewbieProtect - Language File (English)
+#  Run /newbie reload after editing.
+# ===================================================================
+#
+#  Available placeholders (varies per message, see comments):
+#    %time%      formatted time (e.g. 1h23m45s)
+#    %seconds%   remaining seconds
+#    %player%    player name
+#    %state%     status text
+#    %reason%    pause reason
+#    %battle%    seconds until out of combat
+#    %timing%    timing note
+#    %world%     world name
+#    %boss%      boss name
+#    %delta%     changed duration
+#    %count%     count
+#    %input%     user input
+#    %limit%     limit
+#    %toggle-cmd%   on / off
+#
+#  Any PlaceholderAPI placeholder is also supported,
+#  e.g. %newbieprotect_percent%
+# ===================================================================
+
+language:
+  name: "English"
+  code: "en_US"
+
+# -------------------------------------------------------------------
+#  General
+# -------------------------------------------------------------------
+messages:
+  prefix: "&8[&bNewbieProtect&8] &r"
+  player-only: "&cThis command can only be used by a player."
+  no-permission: "&cYou don't have permission to do that."
+  player-not-found: "&cPlayer not found (no data)."
+  usage: "&eUsage: &f/newbie &7| &f/newbie on|off &7| &f/newbie <player> &7| &f/newbie reload|clear|grant &7(admin)"
+
+# -------------------------------------------------------------------
+#  Player messages
+# -------------------------------------------------------------------
+  join-protected: "&aYou are under newbie protection for &e%time% &a. You won't be harmed by mobs or players."
+  join-expired: ""
+  join-self-disabled: "&eYou disabled newbie protection last time. Remaining: &e%time%&e. &7%timing%&7. Type &f/newbie on &7to re-enable."
+
+  query-self: "&aYour newbie protection remaining: &e%time%"
+  query-self-disabled: "&eYour newbie protection is disabled &8| &eRemaining: %time% &8| &7%timing% &8| &7Type &f/newbie on &7to enable"
+  query-self-paused: "&eYour newbie protection remaining: &e%time% &8| &7(%reason%)"
+  query-other: "&aPlayer &f%player% &a's newbie protection remaining: &e%time%"
+
+  expired: "&7Your newbie protection has ended. Have fun!"
+  ending-soon: "&eNote: your newbie protection ends in &c%time%&e."
+
+# -------------------------------------------------------------------
+#  Player self-toggle
+# -------------------------------------------------------------------
+  self-off: "&eYou disabled newbie protection. &7%timing%&7. Remaining: &e%time%&7. Type &f/newbie on &7to re-enable."
+  self-on: "&aNewbie protection re-enabled. Remaining: &e%time%&a."
+  self-already-off: "&7Newbie protection is already disabled. Type &f/newbie on &7to enable."
+  self-already-on: "&7Newbie protection is already enabled. Type &f/newbie off &7to disable."
+  self-toggle-disabled: "&cThis server does not allow players to toggle protection."
+  self-toggle-expired: "&cYour newbie protection has ended; it can no longer be toggled."
+
+# -------------------------------------------------------------------
+#  Boss bar toggle (/newbie bar)
+# -------------------------------------------------------------------
+  bar-hidden: "&7Boss bar hidden. Type &f/newbie bar &7to show it again."
+  bar-shown: "&aBoss bar shown again."
+  bar-toggle-disabled: "&cThis server does not allow players to toggle the boss bar."
+  bar-toggle-failed: "&7The boss bar is already in that state."
+
+# -------------------------------------------------------------------
+#  Pause reasons (used by boss bar %reason% and admin queries)
+# -------------------------------------------------------------------
+  pause-reason-world: "Not counting time in world %world%"
+  pause-reason-residence: "Not counting time in your own residence"
+
+# -------------------------------------------------------------------
+#  Boss battle
+# -------------------------------------------------------------------
+  boss-battle-enter: "&cYou attacked &f%boss%&c! &7Newbie protection is disabled during this fight (%timing%). It will restore after leaving combat."
+  boss-battle-timing-paused: "Timer paused"
+  boss-battle-timing-continue: "Timer still counting"
+
+# -------------------------------------------------------------------
+#  Admin command feedback
+# -------------------------------------------------------------------
+  reload-done: "&aConfiguration reloaded."
+  cleared: "&aCleared newbie protection for &f%player%&a."
+  granted: "&aReset newbie protection for &f%player% &a(&e%time%&a)."
+  cleanup-done: "&aRemoved &f%count% &aboss bar(s) and saved data."
+
+  admin-set: "&aSet &f%player%&a's remaining protection to &e%time%&a."
+  admin-add: "&aAdded &e%delta% &ato &f%player%&a. Now remaining: &e%time%&a."
+  admin-take: "&aTook &e%delta% &afrom &f%player%&a. Now remaining: &e%time%&a."
+  admin-paused-msg: "&eFrozen &f%player%&e's protection timer (no countdown, no protection). Type &f/newbie resume %player% &eto restore."
+  admin-resumed-msg: "&aResumed &f%player%&a's protection timer."
+  admin-opened: "&aForce-enabled protection for &f%player%&a. Remaining: &e%time%&a."
+  admin-closed: "&cForce-disabled protection for &f%player%&c (no protection, time still counts)."
+  admin-limit-exceeded: "&cOver the limit! Maximum is &e%limit%&c (you entered &f%time%&c)."
+  fixconfig-done: "&aCompleted &f%count% &aconfig entry(ies) in config.yml."
+  fixconfig-none: "&7Configuration is already complete."
+
+  need-player: "&cPlease specify a player: &f/newbie <subcommand> <player>"
+  need-player-time: "&cPlease specify a player and time: &f/newbie set <player> <time> &7(e.g. 1h30m)"
+  bad-time: "&cInvalid time format: &f%input% &7Valid examples: &f1h30m &7/ &f45m &7/ &f90s &7/ &f2d"
+
+# -------------------------------------------------------------------
+#  /newbie info card
+# -------------------------------------------------------------------
+info:
+  header: "&fPlayer &b%player%"
+  left: "  &7Remaining   &a%time% &8(%percent%%%)"
+  default-duration: "  &7Default     &f%time%"
+  bonus: "  &7Bonus       &d+%time%"
+  used: "  &7Used        &f%time%"
+  status: "  &7Status      %state%"
+  first-join: "  &7First join  &f%time%"
+  progress: "  &7Progress    %bar%"
+  papi-hint: "  &8(&7PlaceholderAPI placeholders are supported above&8)"
+
+# Status texts (used by %state%)
+status:
+  protected: "&aProtected"
+  protected-offline: "&bProtected &7(offline, timer paused)"
+  disabled: "&cDisabled (by player)"
+  admin-paused: "&eFrozen (by admin)"
+  paused: "&ePaused (%reason%&e)"
+  finished: "&8Ended"
+  newcomer: "Newcomer"
+  unknown: "Unknown"
+
+# -------------------------------------------------------------------
+#  /newbie list
+# -------------------------------------------------------------------
+list:
+  header: "&fNewbieProtect records &7(&b%count% &7total) &8Page &f%page%&8/&f%pages%"
+  empty: "  &7No records yet."
+  entry: "  &8%index%. &f%player% %state% &7Remaining &f%time%"
+  next-page: "  &7Next page: &f/newbie list %page%"
+  state-finished: "&8Ended"
+  state-admin-paused: "&eFrozen"
+  state-disabled: "&cDisabled"
+  state-protected: "&aActive"
+
+# -------------------------------------------------------------------
+#  /newbie help
+# -------------------------------------------------------------------
+help:
+  title: "  %prefix%%b&lNewbieProtect &7v%version%"
+  desc: "  &7Protects new players from mob and player damage for a while"
+  player-section: "  &f&lPlayer commands"
+  cmd-self: "  &b/newbie &8» &7View your remaining protection time"
+  cmd-off: "  &b/newbie off &8» &7Disable protection &8(&7no protection, time still counts&8)"
+  cmd-on: "  &b/newbie on &8» &7Re-enable protection"
+  cmd-toggle: "  &b/newbie toggle &8» &7Toggle protection on / off"
+  cmd-bar: "  &b/newbie bar &8» &7Toggle the boss bar &8(&7hide it if it's in the way&8)"
+  admin-section: "  &c&lAdmin commands"
+  cmd-info: "  &b/newbie info &f<player> &8» &7View details"
+  cmd-set: "  &b/newbie set &f<player> <time> &8» &7Set remaining time"
+  cmd-add: "  &b/newbie add &f<player> <time> &8» &7Add time"
+  cmd-take: "  &b/newbie take &f<player> <time> &8» &7Remove time"
+  cmd-pause: "  &b/newbie pause &f<player> &8» &7Freeze the timer"
+  cmd-resume: "  &b/newbie resume &f<player> &8» &7Resume the timer"
+  cmd-open: "  &b/newbie open &f<player> &8» &7Force-enable protection"
+  cmd-close: "  &b/newbie close &f<player> &8» &7Force-disable protection"
+  cmd-clear: "  &b/newbie clear &f<player> &8» &7Clear record &8(&7treat as new player&8)"
+  cmd-grant: "  &b/newbie grant &f<player> &8» &7Reset to full duration"
+  cmd-list: "  &b/newbie list &f[page] &8» &7List all records"
+  cmd-bosscheck: "  &b/newbie bosscheck &8» &7Check nearby boss detection"
+  cmd-fixconfig: "  &b/newbie fixconfig &8» &7Manually complete missing config"
+  cmd-cleanup: "  &b/newbie cleanup &8» &7Emergency boss bar cleanup"
+  cmd-reload: "  &b/newbie reload &8» &7Reload configuration"
+  time-format: "  &7Time format: &f1h30m &7/ &f45m &7/ &f90s &7/ &f2d &7/ &f300"
+  alias: "  &7Aliases: &f/nb &7/ &f/newb"
+  no-admin: "  &8(Admin commands require &7newbieprotect.admin &8permission)"
+
+# -------------------------------------------------------------------
+#  /newbie bosscheck
+# -------------------------------------------------------------------
+bosscheck:
+  title: "&b[Boss detection diagnostics]"
+  switches: "  &7Enabled &f%enabled% &8| &7Protect in battle &f%protect% &8| &7Pause timer in battle &f%pause%"
+  list: "  &7%bosses%"
+  nearby: "  &7Entities within %radius% blocks:"
+  entity: "    %mark% &f%type%%name%"
+  entity-name: " &7(name: %name%&7)"
+  no-boss: "    &7No boss detected (all entities above are normal mobs)"
+  state: "  &7In battle &f%battle% &8| Out-of-combat in &f%seconds% sec"
+
+# -------------------------------------------------------------------
+#  Startup / console logs
+# -------------------------------------------------------------------
+console:
+  enabled: "NewbieProtect enabled (Folia=%folia%, protect=%enabled%, duration=%minutes% min, self-toggle=%toggle%, records=%count%)"
+  no-persistent-state: "Note: this plugin never modifies persistent player state, so there is no 'stuck invulnerability' after restart."
+  registered-shutdown-hook: "Registered JVM shutdown hook (handles panel stop / SIGTERM)."
+  shutdown-hook-fired: "JVM shutdown hook fired."
+  shutdown-start: "Shutting down NewbieProtect (%reason%)..."
+  shutdown-saved: "NewbieProtect data saved (%count% entries)."
+  shutdown-done: "NewbieProtect shut down safely."
+  data-saved: "NewbieProtect data saved (%count% entries)."
+  timer-started: "Protection timer started (duration %minutes% min)."
+  timer-disabled: "Global switch is off; timer not started."
+  data-loaded: "Loaded %count% newbie protection entries (%finished% finished, %active% still active)."
+  config-generated: "%file% not found, generated default config."
+  config-generated-fail: "Failed to generate %file%: %error%"
+  config-completed: "Auto-completed %count% missing config entries in config.yml (kept existing content and comments):"
+  config-completed-item: "   + %key%"
+  papi-registered: "Registered PlaceholderAPI placeholders: %newbieprotect_time% etc."
+  papi-missing: "PlaceholderAPI not found, skipping placeholder registration."
+  papi-fail: "Failed to register PlaceholderAPI placeholders (skipped): %error%"
+  bstats-enabled: "bStats metrics enabled (anonymous, can be disabled in config.yml)."
+  bstats-disabled-config: "bStats metrics are disabled in config."
+  bstats-no-id: "bStats pluginId not configured, skipping metrics."
+  bstats-fail: "Failed to init bStats (plugin still works): %error%"
+  lang-loaded: "Loaded language file: %lang% (%code%)"
+  lang-missing: "Language file %file% not found, generated default."
+
+# -------------------------------------------------------------------
+#  Boss bar titles
+# -------------------------------------------------------------------
+boss-bar:
+  title: "&bNewbie protection &7| &e%time% left &8| &7Type &f/newbie off &7to disable"
+  title-disabled: "&cProtection disabled &8| &e%time% left &8| &7(%timing%) &8| &7Type &f/newbie on &7to enable"
+  title-paused: "&7(%reason%) &8| &e%time% left &8| &7(%timing%)"
+  title-boss-battle: "&4Boss fight &7protection off &8| &e%time% left &8| &7restores in %battle%s"
+  state-on: "Protected"
+  # %reason% 在 Boss 战斗状态下显示的文字
+  reason-boss-battle: "Boss fight"
+  state-disabled: "Disabled"
+  timing-note-counting: "Time still counts while disabled"
+  timing-note-paused: "Timer paused while disabled"
+  pause-note-counting: "No counting here (time kept)"
+  pause-note-paused: "Timer paused here"

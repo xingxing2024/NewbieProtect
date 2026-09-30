@@ -39,6 +39,7 @@ public final class NewbieProtect extends JavaPlugin {
 
     private PlayerDataStore dataStore;
     private ProtectionManager manager;
+    private com.newbie.protect.config.LanguageManager lang;
     private SchedulerUtils.Cancellable saveTask;
     private volatile boolean shuttingDown = false;
     /** JVM 关闭钩子（应对 SIGTERM / 面板停止）。 */
@@ -57,6 +58,10 @@ public final class NewbieProtect extends JavaPlugin {
         ensureResources();
         reloadConfig();
         ensureConfigComplete();
+
+        // 1.5 语言文件（lang/ 目录）
+        this.lang = new com.newbie.protect.config.LanguageManager(this);
+        this.lang.load();
 
         // 2. 数据
         this.dataStore = new PlayerDataStore(this);
@@ -350,6 +355,13 @@ public final class NewbieProtect extends JavaPlugin {
         }
         ensureConfigComplete();
         try {
+            if (lang != null) {
+                lang.load();
+            }
+        } catch (Throwable t) {
+            getLogger().warning("重载语言文件失败: " + t);
+        }
+        try {
             if (manager != null) {
                 manager.clearAllBossBars();
                 manager.start();
@@ -574,26 +586,85 @@ public final class NewbieProtect extends JavaPlugin {
         return result;
     }
 
-    /** 按 config 的 messages.<key> 发送消息，支持插件占位符 + PAPI 变量。 */
+    /**
+     * 按语言文件发送消息，支持插件占位符 + PAPI 变量。
+     *
+     * <p>查找顺序：{@code messages.<key>}（语言文件）→ 代码内置默认值。</p>
+     */
     public void sendConfigMessage(CommandSender target, String key, String... placeholders) {
         if (target == null) {
             return;
         }
-        // 注意：调用方可能传 null（例如无占位符时），
-        // 此时可变参数数组本身为 null，必须兜底，否则读 length 会 NPE。
         String[] vars = placeholders == null ? new String[0] : placeholders;
         try {
-            String raw = getConfig().getString("messages." + key);
+            String fallback = builtinMessageFallback(key);
+            String raw = langText("messages." + key, fallback, vars);
             if (raw == null || raw.isEmpty()) {
                 return;
             }
-            String prefix = getConfig().getString("messages.prefix", "");
-            // 用统一的解析逻辑：插件占位符 + PAPI 变量（装了 PAPI 且目标是玩家时）
+            String prefix = langRaw("messages.prefix", "");
             org.bukkit.entity.Player player =
                     target instanceof org.bukkit.entity.Player p ? p : null;
-            target.sendMessage(parsePlaceholders(prefix + raw, player, vars));
+            target.sendMessage(parsePlaceholders(prefix + raw, player));
         } catch (Throwable t) {
             getLogger().warning("发送消息 " + key + " 失败: " + t.getMessage());
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 语言                                                                */
+    /* ------------------------------------------------------------------ */
+
+    /** 语言管理器。 */
+    public com.newbie.protect.config.LanguageManager getLang() {
+        return lang;
+    }
+
+    /** 取语言文本（含占位符替换，不转颜色、不加前缀）。 */
+    public String langText(String key, String defaultValue, String... placeholders) {
+        return lang == null
+                ? applyPlaceholders(defaultValue, placeholders)
+                : lang.getRawWith(key, defaultValue, placeholders);
+    }
+
+    /** 取语言文本（转颜色代码）。 */
+    public String langColor(String key, String defaultValue, String... placeholders) {
+        return lang == null
+                ? colorize(applyPlaceholders(defaultValue, placeholders))
+                : lang.get(key, defaultValue, placeholders);
+    }
+
+    /** 取语言原始文本（不替换占位符）。 */
+    public String langRaw(String key, String defaultValue) {
+        return lang == null ? defaultValue : lang.getRaw(key, defaultValue);
+    }
+
+    private static String applyPlaceholders(String text, String... placeholders) {
+        if (text == null) {
+            return "";
+        }
+        String[] vars = placeholders == null ? new String[0] : placeholders;
+        for (int i = 0; i + 1 < vars.length; i += 2) {
+            if (vars[i] != null && vars[i + 1] != null) {
+                text = text.replace(vars[i], vars[i + 1]);
+            }
+        }
+        return text;
+    }
+
+    private static String colorize(String text) {
+        return ChatColor.translateAlternateColorCodes('&', text == null ? "" : text);
+    }
+
+    /** 代码内置的消息兜底（语言文件全找不到时用）。 */
+    private String builtinMessageFallback(String key) {
+        switch (key) {
+            case "prefix": return "&8[&b新人保护&8] &r";
+            case "player-only": return "&c该命令只能由玩家执行。";
+            case "no-permission": return "&c你没有权限执行此操作。";
+            case "player-not-found": return "&c找不到该玩家（数据不存在）。";
+            case "expired": return "&7你的新人保护已结束，祝游戏愉快！";
+            default: return null;
         }
     }
 

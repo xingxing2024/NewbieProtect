@@ -104,12 +104,16 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
                 }
                 var bb = plugin.getManager().getBossBattle();
                 sender.sendMessage(color("&8&m                                                  "));
-                sender.sendMessage(color("&b[Boss 判定诊断]"));
-                sender.sendMessage(color("  &7功能开关 &f" + bb.isEnabled()
-                        + " &8| &7战斗中保护 &f" + bb.isProtectInBattle()
-                        + " &8| &7战斗中暂停计时 &f" + bb.isPauseTimer()));
-                sender.sendMessage(color("  &7" + bb.describeBosses()));
-                sender.sendMessage(color("  &7附近 16 格内的实体判定："));
+                sender.sendMessage(color(plugin.langColor("bosscheck.title", "&b[Boss 判定诊断]")));
+                sender.sendMessage(color(plugin.langColor("bosscheck.switches",
+                        "  &7功能开关 &f%enabled% &8| &7战斗中保护 &f%protect% &8| &7战斗中暂停计时 &f%pause%",
+                        "%enabled%", String.valueOf(bb.isEnabled()),
+                        "%protect%", String.valueOf(bb.isProtectInBattle()),
+                        "%pause%", String.valueOf(bb.isPauseTimer()))));
+                sender.sendMessage(color(plugin.langColor("bosscheck.list",
+                        "  &7%bosses%", "%bosses%", bb.describeBosses())));
+                sender.sendMessage(color(plugin.langColor("bosscheck.nearby",
+                        "  &7附近 %radius% 格内的实体判定：", "%radius%", "16")));
                 int found = 0;
                 for (var e : self.getNearbyEntities(16, 16, 16)) {
                     if (!(e instanceof org.bukkit.entity.LivingEntity le)) {
@@ -120,15 +124,21 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
                         found++;
                     }
                     String cn = le.getCustomName();
-                    sender.sendMessage(color("    " + (isBoss ? "&a✔" : "&8✘") + " &f"
-                            + le.getType().name()
-                            + (cn == null ? "" : " &7(名字: " + cn + "&7)")));
+                    sender.sendMessage(color(plugin.langColor("bosscheck.entity",
+                            "    %mark% &f%type%%name%",
+                            "%mark%", isBoss ? "&a✔" : "&8✘",
+                            "%type%", le.getType().name(),
+                            "%name%", cn == null ? "" : plugin.langColor("bosscheck.entity-name",
+                                    " &7(名字: %name%&7)", "%name%", cn))));
                 }
                 if (found == 0) {
-                    sender.sendMessage(color("    &7没有识别到 Boss（上面的实体都算普通怪）"));
+                    sender.sendMessage(color(plugin.langColor("bosscheck.no-boss",
+                            "    &7没有识别到 Boss（上面的实体都算普通怪）")));
                 }
-                sender.sendMessage(color("  &7当前是否战斗中 &f" + bb.isInBattle(self)
-                        + " &8| 脱战倒计时 &f" + bb.battleSecondsLeft(self) + " 秒"));
+                sender.sendMessage(color(plugin.langColor("bosscheck.state",
+                        "  &7当前是否战斗中 &f%battle% &8| 脱战倒计时 &f%seconds% 秒",
+                        "%battle%", String.valueOf(bb.isInBattle(self)),
+                        "%seconds%", String.valueOf(bb.battleSecondsLeft(self)))));
                 sender.sendMessage(color("&8&m                                                  "));
                 return true;
             }
@@ -446,27 +456,37 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
         double percent = total <= 0 ? 0 : (left * 100.0 / total);
         Player target = Bukkit.getPlayer(entry.uuid());
 
-        String prefix = plugin.getConfig().getString("messages.prefix", "");
+        String prefix = plugin.langRaw("messages.prefix", "");
         sender.sendMessage(color("&8&m                                                  "));
-        send(sender, target, prefix + "&f玩家 &b" + entry.name());
-        send(sender, target, "  &7剩余时间   &a" + ProtectionManager.format(left)
-                + " &8(" + String.format("%.1f", percent) + "%)");
-        send(sender, target, "  &7默认时长   &f" + ProtectionManager.format(total));
+        send(sender, target, prefix + plugin.langText("info.header", "&f玩家 &b%player%",
+                "%player%", entry.name()));
+        send(sender, target, plugin.langText("info.left", "  &7剩余时间   &a%time% &8(%percent%%%)",
+                "%time%", ProtectionManager.format(left),
+                "%percent%", String.format("%.1f", percent)));
+        send(sender, target, plugin.langText("info.default-duration", "  &7默认时长   &f%time%",
+                "%time%", ProtectionManager.format(total)));
         if (used < 0L) {
             // 负值 = 管理员额外赠送的时间
-            send(sender, target, "  &7额外赠送   &d+" + ProtectionManager.format(-used));
-            send(sender, target, "  &7已消耗     &f" + ProtectionManager.format(0L));
+            send(sender, target, plugin.langText("info.bonus", "  &7额外赠送   &d+%time%",
+                    "%time%", ProtectionManager.format(-used)));
+            send(sender, target, plugin.langText("info.used", "  &7已消耗     &f%time%",
+                    "%time%", ProtectionManager.format(0L)));
         } else {
-            send(sender, target, "  &7已消耗     &f" + ProtectionManager.format(used));
+            send(sender, target, plugin.langText("info.used", "  &7已消耗     &f%time%",
+                    "%time%", ProtectionManager.format(used)));
         }
-        send(sender, target, "  &7状态       " + stateText(entry));
+        send(sender, target, plugin.langText("info.status", "  &7状态       %state%",
+                "%state%", stateText(entry)));
         long first = entry.firstJoin();
-        send(sender, target, "  &7首次进服   &f"
-                + (first > 0L
-                ? new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date(first))
-                : "未知"));
-        send(sender, target, "  &7进度       " + progressBar(left, total));
-        send(sender, target, "  &8(&7以上内容支持 PlaceholderAPI 变量&8)");
+        send(sender, target, plugin.langText("info.first-join", "  &7首次进服   &f%time%",
+                "%time%", first > 0L
+                        ? new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
+                        .format(new java.util.Date(first))
+                        : plugin.langText("status.unknown", "未知")));
+        send(sender, target, plugin.langText("info.progress", "  &7进度       %bar%",
+                "%bar%", progressBar(left, total)));
+        send(sender, target, plugin.langText("info.papi-hint",
+                "  &8(&7以上内容支持 PlaceholderAPI 变量&8)"));
         sender.sendMessage(color("&8&m                                                  "));
     }
 
@@ -477,22 +497,23 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
 
     private String stateText(PlayerDataStore.Entry entry) {
         if (entry.finished()) {
-            return "&8已结束";
+            return plugin.langColor("status.finished", "&8已结束");
         }
         if (entry.adminPaused()) {
-            return "&e已冻结（管理员暂停计时）";
+            return plugin.langColor("status.admin-paused", "&e已冻结（管理员暂停计时）");
         }
         if (entry.selfDisabled()) {
-            return "&c已关闭（玩家自己关的）";
+            return plugin.langColor("status.disabled", "&c已关闭（玩家自己关的）");
         }
         Player online = Bukkit.getPlayer(entry.uuid());
         if (online != null && plugin.getManager().isPaused(online)) {
-            return "&e暂停中（" + plugin.getManager().pauseReason(online) + "&e）";
+            return plugin.langColor("status.paused", "&e暂停中（%reason%&e）",
+                    "%reason%", plugin.getManager().pauseReason(online));
         }
         if (online == null) {
-            return "&b保护中 &7(离线，计时暂停)";
+            return plugin.langColor("status.protected-offline", "&b保护中 &7(离线，计时暂停)");
         }
-        return "&a保护中";
+        return plugin.langColor("status.protected", "&a保护中");
     }
 
     /** 文字进度条。 */
@@ -534,28 +555,36 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
         int from = (page - 1) * PAGE_SIZE;
         int to = Math.min(all.size(), from + PAGE_SIZE);
 
-        String prefix = plugin.getConfig().getString("messages.prefix", "");
+        String prefix = plugin.langRaw("messages.prefix", "");
         sender.sendMessage(color("&8&m                                                  "));
-        sender.sendMessage(color(prefix + "&f新人保护记录 &7(共 &b" + all.size() + " &7人) "
-                + "&8第 &f" + page + "&8/&f" + pages + " &8页"));
+        sender.sendMessage(color(prefix + plugin.langColor("list.header",
+                "&f新人保护记录 &7(共 &b%count% &7人) &8第 &f%page%&8/&f%pages% &8页",
+                "%count%", String.valueOf(all.size()),
+                "%page%", String.valueOf(page),
+                "%pages%", String.valueOf(pages))));
         if (all.isEmpty()) {
-            sender.sendMessage(color("  &7暂无记录。"));
+            sender.sendMessage(color(plugin.langColor("list.empty", "  &7暂无记录。")));
         }
         for (int i = from; i < to; i++) {
             PlayerDataStore.Entry e = all.get(i);
             long left = e.finished() ? 0L : Math.max(0L, total - e.usedSeconds());
-            String state = e.finished() ? "&8结束"
-                    : e.adminPaused() ? "&e冻结"
-                    : e.selfDisabled() ? "&c关闭"
-                    : "&a保护";
+            String state = e.finished() ? plugin.langColor("list.state-finished", "&8结束")
+                    : e.adminPaused() ? plugin.langColor("list.state-admin-paused", "&e冻结")
+                    : e.selfDisabled() ? plugin.langColor("list.state-disabled", "&c关闭")
+                    : plugin.langColor("list.state-protected", "&a保护");
             // 按玩家上下文解析 PAPI 变量（离线玩家也能用静态变量）
-            send(sender, Bukkit.getPlayer(e.uuid()),
-                    "  &8" + (i + 1) + ". &f" + pad(e.name(), 16)
-                            + " " + state + " &7剩余 &f" + ProtectionManager.format(left));
+            send(sender, Bukkit.getPlayer(e.uuid()), plugin.langColor("list.entry",
+                    "  &8%index%. &f%player% %state% &7剩余 &f%time%",
+                    "%index%", String.valueOf(i + 1),
+                    "%player%", pad(e.name(), 16),
+                    "%state%", state,
+                    "%time%", ProtectionManager.format(left)));
         }
         sender.sendMessage(color("&8&m                                                  "));
         if (page < pages) {
-            sender.sendMessage(color("  &7下一页: &f/newbie list " + (page + 1)));
+            sender.sendMessage(color(plugin.langColor("list.next-page",
+                    "  &7下一页: &f/newbie list %page%",
+                    "%page%", String.valueOf(page + 1))));
         }
     }
 
@@ -787,46 +816,52 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
     /** 漂亮的 help 界面。 */
     private void usage(CommandSender sender) {
         boolean admin = sender.hasPermission("newbieprotect.admin");
-        String prefix = plugin.getConfig().getString("messages.prefix", "");
+        String prefix = plugin.langRaw("messages.prefix", "");
         String line = "&8&m                                                  ";
 
         sender.sendMessage(color(line));
-        sender.sendMessage(color("  " + prefix + "&b&l新人保护 &7v" + plugin.getDescription().getVersion()));
-        sender.sendMessage(color("  &7新人入服后一段时间内免受怪物与玩家伤害"));
+        sender.sendMessage(color(plugin.langColor("help.title",
+                "  %prefix%&b&l新人保护 &7v%version%",
+                "%prefix%", prefix,
+                "%version%", plugin.getDescription().getVersion())));
+        sender.sendMessage(color(plugin.langColor("help.desc",
+                "  &7新人入服后一段时间内免受怪物与玩家伤害")));
         sender.sendMessage(color(""));
-        sender.sendMessage(color("  &f&l玩家命令"));
-        sender.sendMessage(color("  &b/newbie &8» &7查看自己的剩余保护时间"));
-        sender.sendMessage(color("  &b/newbie off &8» &7关闭保护 &8(&7不再免伤，时间照常计算&8)"));
-        sender.sendMessage(color("  &b/newbie on &8» &7重新开启保护"));
-        sender.sendMessage(color("  &b/newbie toggle &8» &7在开 / 关之间切换"));
-        sender.sendMessage(color("  &b/newbie bar &8» &7开关屏幕上的 Boss 条 &8(&7嫌挡屏幕可关掉&8)"));
+        sender.sendMessage(color(plugin.langColor("help.player-section", "  &f&l玩家命令")));
+        sender.sendMessage(color(plugin.langColor("help.cmd-self", "  &b/newbie &8» &7查看自己的剩余保护时间")));
+        sender.sendMessage(color(plugin.langColor("help.cmd-off", "  &b/newbie off &8» &7关闭保护")));
+        sender.sendMessage(color(plugin.langColor("help.cmd-on", "  &b/newbie on &8» &7重新开启保护")));
+        sender.sendMessage(color(plugin.langColor("help.cmd-toggle", "  &b/newbie toggle &8» &7在开 / 关之间切换")));
+        sender.sendMessage(color(plugin.langColor("help.cmd-bar", "  &b/newbie bar &8» &7开关屏幕上的 Boss 条")));
 
         if (admin) {
             sender.sendMessage(color(""));
-            sender.sendMessage(color("  &c&l管理员命令"));
-            sender.sendMessage(color("  &b/newbie info &f<玩家> &8» &7查看详情"));
-            sender.sendMessage(color("  &b/newbie set &f<玩家> <时间> &8» &7设置剩余时间"));
-            sender.sendMessage(color("  &b/newbie add &f<玩家> <时间> &8» &7增加时间"));
-            sender.sendMessage(color("  &b/newbie take &f<玩家> <时间> &8» &7减少时间"));
-            sender.sendMessage(color("  &b/newbie pause &f<玩家> &8» &7冻结计时 &8(&7停表&8)"));
-            sender.sendMessage(color("  &b/newbie resume &f<玩家> &8» &7恢复计时"));
-            sender.sendMessage(color("  &b/newbie open &f<玩家> &8» &7强制开启保护"));
-            sender.sendMessage(color("  &b/newbie close &f<玩家> &8» &7强制关闭保护"));
-            sender.sendMessage(color("  &b/newbie clear &f<玩家> &8» &7清空记录 &8(&7重新变新人&8)"));
-            sender.sendMessage(color("  &b/newbie grant &f<玩家> &8» &7重置为满时长"));
-            sender.sendMessage(color("  &b/newbie list &f[页码] &8» &7列出所有记录"));
-            sender.sendMessage(color("  &b/newbie bosscheck &8» &7诊断附近实体是否被认作 Boss"));
-            sender.sendMessage(color("  &b/newbie fixconfig &8» &7手动补全缺失的配置项"));
-            sender.sendMessage(color("  &b/newbie cleanup &8» &7应急清理 Boss 条"));
-            sender.sendMessage(color("  &b/newbie reload &8» &7重载配置"));
+            sender.sendMessage(color(plugin.langColor("help.admin-section", "  &c&l管理员命令")));
+            sender.sendMessage(color(plugin.langColor("help.cmd-info", "  &b/newbie info &f<玩家> &8» &7查看详情")));
+            sender.sendMessage(color(plugin.langColor("help.cmd-set", "  &b/newbie set &f<玩家> <时间> &8» &7设置剩余时间")));
+            sender.sendMessage(color(plugin.langColor("help.cmd-add", "  &b/newbie add &f<玩家> <时间> &8» &7增加时间")));
+            sender.sendMessage(color(plugin.langColor("help.cmd-take", "  &b/newbie take &f<玩家> <时间> &8» &7减少时间")));
+            sender.sendMessage(color(plugin.langColor("help.cmd-pause", "  &b/newbie pause &f<玩家> &8» &7冻结计时")));
+            sender.sendMessage(color(plugin.langColor("help.cmd-resume", "  &b/newbie resume &f<玩家> &8» &7恢复计时")));
+            sender.sendMessage(color(plugin.langColor("help.cmd-open", "  &b/newbie open &f<玩家> &8» &7强制开启保护")));
+            sender.sendMessage(color(plugin.langColor("help.cmd-close", "  &b/newbie close &f<玩家> &8» &7强制关闭保护")));
+            sender.sendMessage(color(plugin.langColor("help.cmd-clear", "  &b/newbie clear &f<玩家> &8» &7清空记录")));
+            sender.sendMessage(color(plugin.langColor("help.cmd-grant", "  &b/newbie grant &f<玩家> &8» &7重置为满时长")));
+            sender.sendMessage(color(plugin.langColor("help.cmd-list", "  &b/newbie list &f[页码] &8» &7列出所有记录")));
+            sender.sendMessage(color(plugin.langColor("help.cmd-bosscheck", "  &b/newbie bosscheck &8» &7诊断 Boss 识别")));
+            sender.sendMessage(color(plugin.langColor("help.cmd-fixconfig", "  &b/newbie fixconfig &8» &7补全缺失配置")));
+            sender.sendMessage(color(plugin.langColor("help.cmd-cleanup", "  &b/newbie cleanup &8» &7应急清理 Boss 条")));
+            sender.sendMessage(color(plugin.langColor("help.cmd-reload", "  &b/newbie reload &8» &7重载配置")));
             sender.sendMessage(color(""));
-            sender.sendMessage(color("  &7时间写法：&f1h30m &7/ &f45m &7/ &f90s &7/ &f2d &7/ &f1时30分"));
+            sender.sendMessage(color(plugin.langColor("help.time-format",
+                    "  &7时间写法：&f1h30m &7/ &f45m &7/ &f90s &7/ &f2d")));
         } else {
             sender.sendMessage(color(""));
-            sender.sendMessage(color("  &8（管理员命令需要 &7newbieprotect.admin &8权限）"));
+            sender.sendMessage(color(plugin.langColor("help.no-admin",
+                    "  &8（管理员命令需要 &7newbieprotect.admin &8权限）")));
         }
 
-        sender.sendMessage(color("  &7别名：&f/nb &7/ &f/newb"));
+        sender.sendMessage(color(plugin.langColor("help.alias", "  &7别名：&f/nb &7/ &f/newb")));
         sender.sendMessage(color(line));
     }
 

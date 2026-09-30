@@ -260,88 +260,18 @@ boss-bar:
   #   fixed = 固定满格
   progress-mode: total
 
-# 消息（支持 & 颜色代码）
-messages:
-  prefix: "&8[&b新人保护&8] &r"
-  # 进服时提示（%time% = 剩余保护时长）
-  join-protected: "&a你正处于新人保护期，还有 &e%time% &a。期间不会被怪物和玩家伤害。"
-  # 进服时提示（已经过期）
-  join-expired: ""
-  # 查询剩余时间
-  query-self: "&a你的新人保护剩余：&e%time%"
-  # 查询剩余时间（自己已关闭保护时）
-  query-self-disabled: "&e你的新人保护已关闭 &8| &e剩余 %time% &8| &7%timing% &8| &7输入 &f/newbie on &7可开启"
-  # 查询他人（管理员）
-  query-other: "&a玩家 &f%player% &a的新人保护剩余：&e%time%"
-  # 已过期
-  expired: "&7你的新人保护已结束，祝游戏愉快！"
-  # 玩家自己关闭保护成功（%timing% = 计时说明）
-  self-off: "&e你已关闭新人保护。&7%timing%&7。当前剩余 &e%time%&7。输入 &f/newbie on &7可重新开启。"
-  # 玩家自己重新开启保护
-  self-on: "&a你已重新开启新人保护，剩余 &e%time%&a。"
-  # 进服时发现自己上次关着保护
-  join-self-disabled: "&e你上次关闭了新人保护，当前剩余 &e%time%&e。&7%timing%&7。输入 &f/newbie on &7可重新开启。"
-  # 状态没变化
-  self-already-off: "&7你的新人保护已经是关闭状态了。输入 &f/newbie on &7可重新开启。"
-  self-already-on: "&7你的新人保护本来就是开启的。输入 &f/newbie off &7可关闭。"
-  # 服务器关闭了自助开关
-  self-toggle-disabled: "&c本服务器未开放玩家自助关闭保护。"
-  # 保护已结束，无法再开关
-  self-toggle-expired: "&c你的新人保护已结束，无法再开关。"
-  # 暂停原因（%world% = 世界名），用于 Boss 条 %reason% 和管理员查询
-  pause-reason-world: "世界 %world% 内不计时"
-  pause-reason-residence: "自己领地内不计时"
-  # 玩家在暂停区域查询自己的时间
-  query-self-paused: "&e你的新人保护剩余：&e%time% &8| &7(%reason%)"
-  # 管理员命令反馈
-  need-player: "&c请输入玩家名：&f/newbie <子命令> <玩家>"
-  need-player-time: "&c请输入玩家名和时间：&f/newbie set <玩家> <时间> &7(如 1h30m)"
-  bad-time: "&c时间格式不正确：&f%input% &7可用写法：&f1h30m &7/ &f45m &7/ &f90s &7/ &f2d"
-  admin-set: "&a已把 &f%player% &a的剩余保护时间设为 &e%time%&a。"
-  admin-add: "&a已给 &f%player% &a增加 &e%delta% &a，现在剩余 &e%time%&a。"
-  admin-take: "&a已从 &f%player% &a扣除 &e%delta% &a，现在剩余 &e%time%&a。"
-  admin-paused-msg: "&e已冻结 &f%player% &e的保护计时（不再倒计时，也不再免伤）。输入 &f/newbie resume %player% &e可恢复。"
-  admin-resumed-msg: "&a已恢复 &f%player% &a的保护计时。"
-  admin-opened: "&a已强制开启 &f%player% &a的保护，剩余 &e%time%&a。"
-  admin-closed: "&c已强制关闭 &f%player% &c的保护（不再免伤，时间照常计算）。"
-  cleanup-done: "&a已清理 &f%count% &a条 Boss 条，并保存数据。"
-  # 配置补全（/newbie fixconfig）
-  fixconfig-done: "&a已补全 &f%count% &a项配置（追加在 config.yml 末尾）。"
-  fixconfig-none: "&7配置已经很完整，没有需要补全的项。"
-  # 管理员操作超上限（protection.admin-limit）
-  admin-limit-exceeded: "&c超过上限！单次最多只能设置 &e%limit%&c（你输入了 &f%time%&c）。"
-  # 打 Boss 无效化提示（%boss% = Boss 名字，%timing% = 计时说明）
-  boss-battle-enter: "&c你攻击了 &f%boss% &c！&7本次战斗中新人保护暂时失效（%timing%）。脱战后自动恢复。"
-  # Boss 条开关（/newbie bar）
-  bar-hidden: "&7已关闭 Boss 条显示。输入 &f/newbie bar &7可重新打开。"
-  bar-shown: "&a已重新显示 Boss 条。"
-  bar-toggle-disabled: "&c本服务器不允许玩家自行开关 Boss 条。"
-  bar-toggle-failed: "&7Boss 条状态已经是这样了。"
-  # 保护结束倒计时提醒（剩余多少秒时提醒，见下方 remind-seconds）
-  ending-soon: "&e注意：你的新人保护将在 &c%time% &e后结束。"
-  # 管理员命令反馈
-  reload-done: "&a配置文件已重载。"
-  cleared: "&a已清除玩家 &f%player% &a的新人保护。"
-  granted: "&a已给玩家 &f%player% &a重置新人保护（&e%time%&a）。"
-  player-not-found: "&c找不到该玩家（数据不存在）。"
-  player-only: "&c该命令只能由玩家执行。"
-  no-permission: "&c你没有权限执行此操作。"
-  usage: "&e用法: &f/newbie &7| &f/newbie on|off &7| &f/newbie <玩家> &7| &f/newbie reload|clear|grant &7(管理员)"
-  # 管理员执行 /newbie help 时额外显示
-  usage-admin:
-    - "&7---- &b玩家命令 &7----"
-    - "&f/newbie &7- 查看自己的剩余保护时间"
-    - "&f/newbie off &7- 自己关闭保护（不免伤，时间照常计算）"
-    - "&f/newbie on &7- 自己重新开启保护"
-    - "&7---- &b管理员命令 &7----"
-    - "&f/newbie info <玩家> &7- 查看某人保护详情"
-    - "&f/newbie clear <玩家> &7- 清除记录（下次进服重新算新人）"
-    - "&f/newbie grant <玩家> &7- 重置为满时长保护"
-    - "&f/newbie list &7- 查看已记录人数 / Boss 条数量"
-    - "&f/newbie cleanup &7- 应急：强制清掉所有 Boss 条并保存"
-    - "&f/newbie reload &7- 重载配置（含自动补生成 config.yml）"
+# -------------------------------------------------------------------
+#  语言设置
+#  语言文件在 plugins/NewbieProtect/lang/ 目录下
+#  内置：zh_CN.yml（简体中文）、en_US.yml（English）
+#  想加别的语言：复制一份改名（如 ja_JP.yml）并把 language 设成 ja_JP
+#  修改语言文件后执行 /newbie reload 生效
+# -------------------------------------------------------------------
+language: zh_CN
 
-# 保护期结束前提醒（秒）。留空 [] 表示不提醒
+# 注意：所有提示文本（消息、Boss 条标题、命令帮助）都已移到语言文件，
+#      不再写在 config.yml 里。请编辑 lang/<语言>.yml。
+
 remind-seconds:
   - 300
   - 60

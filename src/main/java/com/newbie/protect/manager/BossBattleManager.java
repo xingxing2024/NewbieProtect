@@ -169,7 +169,8 @@ public class BossBattleManager {
             plugin.sendConfigMessage(player, "boss-battle-enter",
                     "%boss%", bossName,
                     "%timing%", isPauseTimer()
-                            ? "保护计时已暂停" : "保护计时继续");
+                            ? plugin.langText("boss-battle-timing-paused", "保护计时已暂停")
+                            : plugin.langText("boss-battle-timing-continue", "保护计时继续"));
             plugin.getLogger().info("玩家 " + player.getName()
                     + " 攻击了 Boss(" + bossName + ")，进入 Boss 战斗状态，保护暂时失效。");
         }

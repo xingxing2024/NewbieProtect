@@ -285,7 +285,8 @@ public class ProtectionManager {
                 fallback = "&b新人保护中 &7| &e剩余 %time% &8| &7输入 &f/newbie off &7可关闭";
                 colorKey = "boss-bar.color";
             }
-            String raw = plugin.getConfig().getString(key, fallback);
+            // 标题从语言文件读取（找不到则用上面的内置 fallback）
+            String raw = plugin.langRaw(key, fallback);
             if (raw == null || raw.isEmpty()) {
                 raw = fallback;
             }
@@ -293,11 +294,11 @@ public class ProtectionManager {
             // %timing%：暂停区用 pause-note-*，其他用 timing-note-*
             String timing = paused
                     ? (countInPaused
-                            ? plugin.getConfig().getString("boss-bar.pause-note-counting", "此区域不计时（剩余时间保留）")
-                            : plugin.getConfig().getString("boss-bar.pause-note-paused", "此处保护计时已暂停"))
+                            ? plugin.langRaw("boss-bar.pause-note-counting", "此区域不计时（剩余时间保留）")
+                            : plugin.langRaw("boss-bar.pause-note-paused", "此处保护计时已暂停"))
                     : (plugin.isCountWhileDisabled()
-                            ? plugin.getConfig().getString("boss-bar.timing-note-counting", "时间照常计算")
-                            : plugin.getConfig().getString("boss-bar.timing-note-paused", "计时已暂停"));
+                            ? plugin.langRaw("boss-bar.timing-note-counting", "时间照常计算")
+                            : plugin.langRaw("boss-bar.timing-note-paused", "计时已暂停"));
 
             // Boss 条标题：支持插件占位符 + PAPI 变量
             String title = plugin.parsePlaceholders(raw, player,
@@ -305,9 +306,11 @@ public class ProtectionManager {
                     "%seconds%", String.valueOf(left),
                     "%player%", player.getName(),
                     "%state%", selfOff
-                            ? plugin.getConfig().getString("boss-bar.state-disabled", "已关闭")
-                            : plugin.getConfig().getString("boss-bar.state-on", "保护中"),
-                    "%reason%", bossBattle ? "Boss 战斗中" : pauseReason(player),
+                            ? plugin.langRaw("boss-bar.state-disabled", "已关闭")
+                            : plugin.langRaw("boss-bar.state-on", "保护中"),
+                    "%reason%", bossBattle
+                            ? plugin.langRaw("boss-bar.reason-boss-battle", "Boss 战斗中")
+                            : pauseReason(player),
                     "%battle%", String.valueOf(getBossBattle().battleSecondsLeft(player)),
                     "%timing%", timing,
                     "%toggle-cmd%", selfOff ? "on" : "off");
@@ -494,12 +497,12 @@ public class ProtectionManager {
         }
         if (plugin.isWorldListEnabled() && inListedWorld(player)) {
             String name = player.getWorld() == null ? "?" : player.getWorld().getName();
-            return plugin.getConfig().getString("messages.pause-reason-world", "世界 %world% 内不计时")
-                    .replace("%world%", name);
+            return plugin.langText("messages.pause-reason-world", "世界 %world% 内不计时",
+                    "%world%", name);
         }
         if (plugin.isResidenceEnabled() && residenceHook.isAvailable()
                 && residenceHook.isInOwnResidence(player, plugin.isResidenceOwnerOnly())) {
-            return plugin.getConfig().getString("messages.pause-reason-residence", "自己领地内不计时");
+            return plugin.langText("messages.pause-reason-residence", "自己领地内不计时");
         }
         return "";
     }

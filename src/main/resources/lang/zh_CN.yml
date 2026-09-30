@@ -1,0 +1,235 @@
+# ===================================================================
+#  NewbieProtect - 语言文件（简体中文）
+#  修改后执行 /newbie reload 生效
+# ===================================================================
+#
+#  可用占位符（不同消息不同，详见每条后面的注释）：
+#    %time%      时间（已格式化为 1时23分45秒）
+#    %seconds%   剩余秒数
+#    %player%    玩家名
+#    %state%     状态文字
+#    %reason%    暂停原因
+#    %battle%    脱战剩余秒数
+#    %timing%    计时说明
+#    %world%     世界名
+#    %boss%      Boss 名字
+#    %delta%     变化的时间
+#    %count%     数量
+#    %input%     用户输入
+#    %limit%     上限
+#    %toggle-cmd%   on / off
+#
+#  另外支持任意 PlaceholderAPI 变量，如 %newbieprotect_percent%
+# ===================================================================
+
+language:
+  name: "简体中文"
+  code: "zh_CN"
+
+# -------------------------------------------------------------------
+#  通用
+# -------------------------------------------------------------------
+messages:
+  prefix: "&8[&b新人保护&8] &r"
+  player-only: "&c该命令只能由玩家执行。"
+  no-permission: "&c你没有权限执行此操作。"
+  player-not-found: "&c找不到该玩家（数据不存在）。"
+  usage: "&e用法: &f/newbie &7| &f/newbie on|off &7| &f/newbie <玩家> &7| &f/newbie reload|clear|grant &7(管理员)"
+
+# -------------------------------------------------------------------
+#  玩家相关
+# -------------------------------------------------------------------
+  join-protected: "&a你正处于新人保护期，还有 &e%time% &a。期间不会被怪物和玩家伤害。"
+  join-expired: ""
+  join-self-disabled: "&e你上次关闭了新人保护，当前剩余 &e%time%&e。&7%timing%&7。输入 &f/newbie on &7可重新开启。"
+
+  query-self: "&a你的新人保护剩余：&e%time%"
+  query-self-disabled: "&e你的新人保护已关闭 &8| &e剩余 %time% &8| &7%timing% &8| &7输入 &f/newbie on &7可开启"
+  query-self-paused: "&e你的新人保护剩余：&e%time% &8| &7(%reason%)"
+  query-other: "&a玩家 &f%player% &a的新人保护剩余：&e%time%"
+
+  expired: "&7你的新人保护已结束，祝游戏愉快！"
+  ending-soon: "&e注意：你的新人保护将在 &c%time% &e后结束。"
+
+# -------------------------------------------------------------------
+#  玩家自助开关
+# -------------------------------------------------------------------
+  self-off: "&e你已关闭新人保护。&7%timing%&7。当前剩余 &e%time%&7。输入 &f/newbie on &7可重新开启。"
+  self-on: "&a你已重新开启新人保护，剩余 &e%time%&a。"
+  self-already-off: "&7你的新人保护已经是关闭状态了。输入 &f/newbie on &7可重新开启。"
+  self-already-on: "&7你的新人保护本来就是开启的。输入 &f/newbie off &7可关闭。"
+  self-toggle-disabled: "&c本服务器未开放玩家自助关闭保护。"
+  self-toggle-expired: "&c你的新人保护已结束，无法再开关。"
+
+# -------------------------------------------------------------------
+#  Boss 条开关（/newbie bar）
+# -------------------------------------------------------------------
+  bar-hidden: "&7已关闭 Boss 条显示。输入 &f/newbie bar &7可重新打开。"
+  bar-shown: "&a已重新显示 Boss 条。"
+  bar-toggle-disabled: "&c本服务器不允许玩家自行开关 Boss 条。"
+  bar-toggle-failed: "&7Boss 条状态已经是这样了。"
+
+# -------------------------------------------------------------------
+#  暂停原因（用于 Boss 条 %reason% 和管理员查询）
+# -------------------------------------------------------------------
+  pause-reason-world: "世界 %world% 内不计时"
+  pause-reason-residence: "自己领地内不计时"
+
+# -------------------------------------------------------------------
+#  打 Boss 无效化
+# -------------------------------------------------------------------
+  boss-battle-enter: "&c你攻击了 &f%boss% &c！&7本次战斗中新人保护暂时失效（%timing%）。脱战后自动恢复。"
+  boss-battle-timing-paused: "保护计时已暂停"
+  boss-battle-timing-continue: "保护计时继续"
+
+# -------------------------------------------------------------------
+#  管理员命令反馈
+# -------------------------------------------------------------------
+  reload-done: "&a配置文件已重载。"
+  cleared: "&a已清除玩家 &f%player% &a的新人保护。"
+  granted: "&a已给玩家 &f%player% &a重置新人保护（&e%time%&a）。"
+  cleanup-done: "&a已清理 &f%count% &a条 Boss 条，并保存数据。"
+
+  admin-set: "&a已把 &f%player% &a的剩余保护时间设为 &e%time%&a。"
+  admin-add: "&a已给 &f%player% &a增加 &e%delta% &a，现在剩余 &e%time%&a。"
+  admin-take: "&a已从 &f%player% &a扣除 &e%delta% &a，现在剩余 &e%time%&a。"
+  admin-paused-msg: "&e已冻结 &f%player% &e的保护计时（不再倒计时，也不再免伤）。输入 &f/newbie resume %player% &e可恢复。"
+  admin-resumed-msg: "&a已恢复 &f%player% &a的保护计时。"
+  admin-opened: "&a已强制开启 &f%player% &a的保护，剩余 &e%time%&a。"
+  admin-closed: "&c已强制关闭 &f%player% &c的保护（不再免伤，时间照常计算）。"
+  admin-limit-exceeded: "&c超过上限！单次最多只能设置 &e%limit%&c（你输入了 &f%time%&c）。"
+  fixconfig-done: "&a已补全 &f%count% &a项配置（追加在 config.yml 末尾）。"
+  fixconfig-none: "&7配置已经很完整，没有需要补全的项。"
+
+  need-player: "&c请输入玩家名：&f/newbie <子命令> <玩家>"
+  need-player-time: "&c请输入玩家名和时间：&f/newbie set <玩家> <时间> &7(如 1h30m)"
+  bad-time: "&c时间格式不正确：&f%input% &7可用写法：&f1h30m &7/ &f45m &7/ &f90s &7/ &f2d"
+
+# -------------------------------------------------------------------
+#  /newbie info 详情卡片
+# -------------------------------------------------------------------
+info:
+  header: "&f玩家 &b%player%"
+  left: "  &7剩余时间   &a%time% &8(%percent%%%)"
+  default-duration: "  &7默认时长   &f%time%"
+  bonus: "  &7额外赠送   &d+%time%"
+  used: "  &7已消耗     &f%time%"
+  status: "  &7状态       %state%"
+  first-join: "  &7首次进服   &f%time%"
+  progress: "  &7进度       %bar%"
+  papi-hint: "  &8(&7以上内容支持 PlaceholderAPI 变量&8)"
+
+# 状态文字（用于 %state%）
+status:
+  protected: "&a保护中"
+  protected-offline: "&b保护中 &7(离线，计时暂停)"
+  disabled: "&c已关闭（玩家自己关的）"
+  admin-paused: "&e已冻结（管理员暂停计时）"
+  paused: "&e暂停中（%reason%&e）"
+  finished: "&8已结束"
+  newcomer: "新人"
+  unknown: "未知"
+
+# -------------------------------------------------------------------
+#  /newbie list 列表
+# -------------------------------------------------------------------
+list:
+  header: "&f新人保护记录 &7(共 &b%count% &7人) &8第 &f%page%&8/&f%pages% &8页"
+  empty: "  &7暂无记录。"
+  entry: "  &8%index%. &f%player% %state% &7剩余 &f%time%"
+  next-page: "  &7下一页: &f/newbie list %page%"
+  state-finished: "&8结束"
+  state-admin-paused: "&e冻结"
+  state-disabled: "&c关闭"
+  state-protected: "&a保护"
+
+# -------------------------------------------------------------------
+#  /newbie help 帮助界面
+# -------------------------------------------------------------------
+help:
+  title: "  %prefix%%b&l新人保护 &7v%version%"
+  desc: "  &7新人入服后一段时间内免受怪物与玩家伤害"
+  player-section: "  &f&l玩家命令"
+  cmd-self: "  &b/newbie &8» &7查看自己的剩余保护时间"
+  cmd-off: "  &b/newbie off &8» &7关闭保护 &8(&7不再免伤，时间照常计算&8)"
+  cmd-on: "  &b/newbie on &8» &7重新开启保护"
+  cmd-toggle: "  &b/newbie toggle &8» &7在开 / 关之间切换"
+  cmd-bar: "  &b/newbie bar &8» &7开关屏幕上的 Boss 条 &8(&7嫌挡屏幕可关掉&8)"
+  admin-section: "  &c&l管理员命令"
+  cmd-info: "  &b/newbie info &f<玩家> &8» &7查看详情"
+  cmd-set: "  &b/newbie set &f<玩家> <时间> &8» &7设置剩余时间"
+  cmd-add: "  &b/newbie add &f<玩家> <时间> &8» &7增加时间"
+  cmd-take: "  &b/newbie take &f<玩家> <时间> &8» &7减少时间"
+  cmd-pause: "  &b/newbie pause &f<玩家> &8» &7冻结计时 &8(&7停表&8)"
+  cmd-resume: "  &b/newbie resume &f<玩家> &8» &7恢复计时"
+  cmd-open: "  &b/newbie open &f<玩家> &8» &7强制开启保护"
+  cmd-close: "  &b/newbie close &f<玩家> &8» &7强制关闭保护"
+  cmd-clear: "  &b/newbie clear &f<玩家> &8» &7清空记录 &8(&7重新变新人&8)"
+  cmd-grant: "  &b/newbie grant &f<玩家> &8» &7重置为满时长"
+  cmd-list: "  &b/newbie list &f[页码] &8» &7列出所有记录"
+  cmd-bosscheck: "  &b/newbie bosscheck &8» &7诊断附近实体是否被认作 Boss"
+  cmd-fixconfig: "  &b/newbie fixconfig &8» &7手动补全缺失的配置项"
+  cmd-cleanup: "  &b/newbie cleanup &8» &7应急清理 Boss 条"
+  cmd-reload: "  &b/newbie reload &8» &7重载配置"
+  time-format: "  &7时间写法：&f1h30m &7/ &f45m &7/ &f90s &7/ &f2d &7/ &f1时30分"
+  alias: "  &7别名：&f/nb &7/ &f/newb"
+  no-admin: "  &8（管理员命令需要 &7newbieprotect.admin &8权限）"
+
+# -------------------------------------------------------------------
+#  /newbie bosscheck 诊断
+# -------------------------------------------------------------------
+bosscheck:
+  title: "&b[Boss 判定诊断]"
+  switches: "  &7功能开关 &f%enabled% &8| &7战斗中保护 &f%protect% &8| &7战斗中暂停计时 &f%pause%"
+  list: "  &7%bosses%"
+  nearby: "  &7附近 %radius% 格内的实体判定："
+  entity: "    %mark% &f%type%%name%"
+  entity-name: " &7(名字: %name%&7)"
+  no-boss: "    &7没有识别到 Boss（上面的实体都算普通怪）"
+  state: "  &7当前是否战斗中 &f%battle% &8| 脱战倒计时 &f%seconds% 秒"
+
+# -------------------------------------------------------------------
+#  启动 / 控制台日志
+# -------------------------------------------------------------------
+console:
+  enabled: "NewbieProtect 已启用 (Folia=%folia%, 保护=%enabled%, 总时长=%minutes% 分钟, 自助开关=%toggle%, 已记录=%count% 人)"
+  no-persistent-state: "提示：本插件不修改任何玩家持久状态，卸载/重启后不会出现「无敌残留」。"
+  registered-shutdown-hook: "已注册 JVM 关闭钩子（应对面板停止 / SIGTERM）。"
+  shutdown-hook-fired: "JVM 关闭钩子已触发。"
+  shutdown-start: "正在关闭新人保护（%reason%）..."
+  shutdown-saved: "新人保护数据已保存（%count% 条）。"
+  shutdown-done: "NewbieProtect 已安全关闭。"
+  data-saved: "新人保护数据已保存（%count% 条）。"
+  timer-started: "新人保护计时任务已启动（总时长 %minutes% 分钟）。"
+  timer-disabled: "新人保护总开关已关闭，不启动计时任务。"
+  data-loaded: "已载入 %count% 条新人保护数据（其中 %finished% 人保护已结束，%active% 人仍在保护/未用尽）。"
+  config-generated: "未找到 %file%，已自动生成默认配置。"
+  config-generated-fail: "自动生成 %file% 失败: %error%"
+  config-completed: "已自动补全 config.yml 中缺失的 %count% 项配置（保留原有内容与注释）："
+  config-completed-item: "   + %key%"
+  papi-registered: "已注册 PlaceholderAPI 变量：%newbieprotect_time% 等。"
+  papi-missing: "未检测到 PlaceholderAPI，跳过变量注册（变量如 %newbieprotect_time% 需要 PAPI）。"
+  papi-fail: "注册 PlaceholderAPI 变量时出错（已跳过）: %error%"
+  bstats-enabled: "bStats 统计已启用（匿名，可在 config.yml 关闭）。"
+  bstats-disabled-config: "bStats 统计已在配置中关闭。"
+  bstats-no-id: "bStats 未配置 pluginId，统计功能跳过。"
+  bstats-fail: "bStats 初始化失败（不影响插件功能）: %error%"
+  lang-loaded: "已加载语言文件: %lang% (%code%)"
+  lang-missing: "未找到语言文件 %file%，已生成默认。"
+
+# -------------------------------------------------------------------
+#  Boss 条标题
+# -------------------------------------------------------------------
+boss-bar:
+  title: "&b新人保护中 &7| &e剩余 %time% &8| &7输入 &f/newbie off &7可关闭"
+  title-disabled: "&c保护已关闭 &8| &e剩余 %time% &8| &7(%timing%) &8| &7输入 &f/newbie on &7可开启"
+  title-paused: "&7(%reason%) &8| &e剩余 %time% &8| &7(%timing%)"
+  title-boss-battle: "&4Boss 战斗中 &7保护失效 &8| &e剩余 %time% &8| &7脱战 %battle% 秒后恢复"
+  state-on: "保护中"
+  # %reason% 在 Boss 战斗状态下显示的文字
+  reason-boss-battle: "Boss 战斗中"
+  state-disabled: "已关闭"
+  timing-note-counting: "关闭期间保护时间照常计算"
+  timing-note-paused: "关闭期间计时已暂停"
+  pause-note-counting: "此区域不计时（剩余时间保留）"
+  pause-note-paused: "此处保护计时已暂停"
