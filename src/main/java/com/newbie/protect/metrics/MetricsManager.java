@@ -41,34 +41,61 @@ public final class MetricsManager {
      */
     public static final int PLUGIN_ID = 34419;   // NewbieProtectA @ bstats.org
 
-    private MetricsManager() {
+    private final NewbieProtect plugin;
+    private Metrics active;
+    private boolean closed;
+
+    public MetricsManager(NewbieProtect plugin) {
+        this.plugin = java.util.Objects.requireNonNull(plugin, "plugin");
     }
 
-    /**
-     * 初始化统计。
-     *
-     * @return true 表示初始化成功
-     */
-    public static boolean init(NewbieProtect plugin) {
-        // 未配置 pluginId 就不启用（避免报错）
-        if (PLUGIN_ID <= 0) {
-            plugin.getLogger().info("bStats 未配置 pluginId，统计功能跳过"
-                    + "（去 bstats.org 注册后填入 MetricsManager.PLUGIN_ID）。");
+    /** Applies the current configuration without starting duplicate reporters. */
+    public synchronized boolean reload() {
+        if (closed || plugin.isShuttingDown()
+                || !plugin.getConfig().getBoolean("metrics.enabled", true) || PLUGIN_ID <= 0) {
+            stopActive();
             return false;
         }
-        // 配置里关闭
-        if (!plugin.getConfig().getBoolean("metrics.enabled", true)) {
-            plugin.getLogger().info("bStats 统计已在配置中关闭。");
-            return false;
-        }
-        try {
-            Metrics metrics = new Metrics(plugin, PLUGIN_ID);
-            registerCharts(plugin, metrics);
-            plugin.getLogger().info("bStats 统计已启用（匿名，可在 config.yml 关闭）。");
+        if (active != null) {
             return true;
-        } catch (Throwable t) {
-            plugin.getLogger().warning("bStats 初始化失败（不影响插件功能）: " + t.getMessage());
+        }
+        Metrics candidate = null;
+        try {
+            candidate = new Metrics(plugin, PLUGIN_ID);
+            registerCharts(plugin, candidate);
+            active = candidate;
+            String enabled = plugin.langText("console.bstats-enabled", "bStats metrics enabled (anonymous, configurable).");
+            plugin.getLogger().info(enabled == null ? "bStats metrics enabled." : enabled);
+            return true;
+        } catch (Throwable failure) {
+            active = null;
+            if (candidate != null) {
+                stop(candidate);
+            }
+            plugin.getLogger().warning("bStats 初始化失败（不影响插件功能）: " + failure.getMessage());
             return false;
+        }
+    }
+
+    /** Stops reporting and makes final shutdown idempotent. */
+    public synchronized void shutdown() {
+        closed = true;
+        stopActive();
+    }
+
+    private void stopActive() {
+        Metrics previous = active;
+        active = null;
+        if (previous != null) {
+            stop(previous);
+        }
+    }
+
+    private void stop(Metrics metrics) {
+        try {
+            metrics.shutdown();
+        } catch (Throwable failure) {
+            plugin.getLogger().warning("bStats 停止失败（不影响插件功能）: " + failure.getMessage());
         }
     }
 

@@ -38,6 +38,8 @@ public final class NewbieProtect extends JavaPlugin {
     private static final int CONFIG_VERSION = 2;
 
     private PlayerDataStore dataStore;
+    private com.newbie.protect.metrics.MetricsManager metrics;
+    private Runnable unregisterPlaceholders = () -> {};
     private ProtectionManager manager;
     private com.newbie.protect.config.LanguageManager lang;
     private SchedulerUtils.Cancellable saveTask;
@@ -66,6 +68,11 @@ public final class NewbieProtect extends JavaPlugin {
         // 2. 数据
         this.dataStore = new PlayerDataStore(this);
         this.dataStore.load();
+        if (!this.dataStore.isLoadHealthy()) {
+            getLogger().severe("data.yml 无法安全载入，已停止新人保护；请修复或恢复文件后重启。");
+            getServer().getPluginManager().disablePlugin(this);
+            return;
+        }
 
         // 3. 管理器
         this.manager = new ProtectionManager(this);
@@ -105,16 +112,14 @@ public final class NewbieProtect extends JavaPlugin {
         registerPlaceholders();
 
         // 11. bStats 匿名统计（可在 config.yml 关闭）
-        com.newbie.protect.metrics.MetricsManager.init(this);
+        this.metrics = new com.newbie.protect.metrics.MetricsManager(this);
+        this.metrics.reload();
 
-        getLogger().info("NewbieProtect 已启用"
-                + " (Folia=" + SchedulerUtils.isFolia()
-                + ", 保护=" + (isProtectEnabled() ? "开" : "关")
-                + ", 总时长=" + (getProtectDurationSeconds() / 60) + " 分钟"
-                + ", 自助开关=" + (isSelfToggleEnabled() ? "允许" : "禁止")
-                + ", 已记录=" + dataStore.size() + " 人)");
-        getLogger().info("提示：本插件不修改任何玩家持久状态，"
-                + "卸载/重启后不会出现「无敌残留」。");
+        getLogger().info(consoleText("enabled", "NewbieProtect enabled",
+                "%folia%", String.valueOf(SchedulerUtils.isFolia()), "%enabled%", String.valueOf(isProtectEnabled()),
+                "%minutes%", String.valueOf(getProtectDurationSeconds() / 60), "%toggle%", String.valueOf(isSelfToggleEnabled()),
+                "%count%", String.valueOf(dataStore.size())));
+        getLogger().info(consoleText("no-persistent-state", "本插件不修改任何玩家持久状态。"));
     }
 
     /* ------------------------------------------------------------------ */
@@ -130,14 +135,15 @@ public final class NewbieProtect extends JavaPlugin {
         // 关键：先判断有没有 PAPI，再决定是否加载引用 PAPI 的类，
         // 否则没装 PAPI 的服务器会抛 NoClassDefFoundError。
         if (getServer().getPluginManager().getPlugin("PlaceholderAPI") == null) {
-            getLogger().info("未检测到 PlaceholderAPI，跳过变量注册"
-                    + "（变量如 %newbieprotect_time% 需要 PAPI）。");
+            getLogger().info(consoleText("papi-missing", "未检测到 PlaceholderAPI，跳过变量注册。"));
             return;
         }
         try {
-            boolean ok = new com.newbie.protect.hook.PlaceholderBridgeExtension(this).register();
+            var extension = new com.newbie.protect.hook.PlaceholderBridgeExtension(this);
+            boolean ok = extension.register();
             if (ok) {
-                getLogger().info("已注册 PlaceholderAPI 变量：%newbieprotect_time% 等。");
+                unregisterPlaceholders = extension::unregister;
+                getLogger().info(consoleText("papi-registered", "已注册 PlaceholderAPI 变量。"));
             } else {
                 getLogger().warning("PlaceholderAPI 变量注册失败（返回 false）。");
             }
@@ -172,8 +178,16 @@ public final class NewbieProtect extends JavaPlugin {
         shuttingDown = true;
 
         if (first) {
-            getLogger().info("正在关闭新人保护（" + reason + "）...");
+            getLogger().info(consoleText("shutdown-start", "正在关闭新人保护（" + reason + "）...", "%reason%", reason));
         }
+
+        try {
+            unregisterPlaceholders.run();
+            unregisterPlaceholders = () -> {};
+        } catch (Throwable t) {
+            getLogger().warning("注销 PlaceholderAPI 扩展失败: " + t.getMessage());
+        }
+        if (metrics != null) metrics.shutdown();
 
         // 1) 取消定时任务
         try {
@@ -197,15 +211,19 @@ public final class NewbieProtect extends JavaPlugin {
         // 3) 落盘
         try {
             if (dataStore != null) {
-                dataStore.save();
-                getLogger().info("新人保护数据已保存（" + dataStore.size() + " 条）。");
+                dataStore.close();
+                if (!dataStore.isLoadHealthy() || dataStore.isDirty()) {
+                    getLogger().warning("新人保护数据仍有未保存的改动，请检查此前的保存错误。");
+                } else {
+                    getLogger().info(consoleText("shutdown-saved", "新人保护数据已保存（" + dataStore.size() + " 条）。", "%count%", String.valueOf(dataStore.size())));
+                }
             }
         } catch (Throwable t) {
             getLogger().warning("保存数据失败: " + t.getMessage());
         }
 
         if (first) {
-            getLogger().info("NewbieProtect 已安全关闭。");
+            getLogger().info(consoleText("shutdown-done", "NewbieProtect 已安全关闭。"));
         }
     }
 
@@ -235,7 +253,7 @@ public final class NewbieProtect extends JavaPlugin {
             hook.setDaemon(false);
             Runtime.getRuntime().addShutdownHook(hook);
             this.shutdownHook = hook;
-            getLogger().info("已注册 JVM 关闭钩子（应对面板停止 / SIGTERM）。");
+            getLogger().info(consoleText("registered-shutdown-hook", "已注册 JVM 关闭钩子。"));
         } catch (Throwable t) {
             getLogger().warning("注册 JVM 关闭钩子失败: " + t.getMessage());
         }
@@ -254,13 +272,13 @@ public final class NewbieProtect extends JavaPlugin {
         }
     }
 
-    /** 玩家退出时调用：立即落盘，避免强杀丢数据。 */
+    /** 玩家退出时调用：立即请求后台保存，减少退出事件中的 I/O。 */
     public void saveOnQuit() {
         if (shuttingDown || dataStore == null) {
             return;
         }
         try {
-            dataStore.save();
+            dataStore.requestSave();
         } catch (Throwable ignored) {
             // 忽略
         }
@@ -272,7 +290,7 @@ public final class NewbieProtect extends JavaPlugin {
             return;
         }
         if (dataStore.isDirty()) {
-            dataStore.save();
+            dataStore.requestSave();
         }
     }
 
@@ -292,7 +310,7 @@ public final class NewbieProtect extends JavaPlugin {
             if (!file.isFile()) {
                 try {
                     saveResource(name, false);
-                    getLogger().info("未找到 " + name + "，已自动生成默认配置。");
+                    getLogger().info(consoleText("config-generated", "未找到 " + name + "，已自动生成默认配置。", "%file%", name));
                 } catch (IllegalArgumentException e) {
                     getLogger().warning("自动生成 " + name + " 失败: " + e.getMessage());
                 }
@@ -369,6 +387,7 @@ public final class NewbieProtect extends JavaPlugin {
         } catch (Throwable t) {
             getLogger().warning("重启计时任务失败: " + t);
         }
+        if (metrics != null) metrics.reload();
         getLogger().info("配置已重载（总时长 " + (getProtectDurationSeconds() / 60) + " 分钟）。");
     }
 
@@ -413,7 +432,8 @@ public final class NewbieProtect extends JavaPlugin {
         if (player == null || dataStore == null) {
             return false;
         }
-        PlayerDataStore.Entry entry = dataStore.getOrCreate(player.getUniqueId(), player.getName());
+        PlayerDataStore.Entry entry = dataStore.get(player.getUniqueId());
+        if (entry == null) return false;
         if (entry.bossBarHidden() == hidden) {
             return false;
         }
@@ -518,7 +538,12 @@ public final class NewbieProtect extends JavaPlugin {
     /** 保护总时长（秒）。 */
     public long getProtectDurationSeconds() {
         long minutes = getConfig().getLong("protection.duration-minutes", 120L);
-        return Math.max(0L, minutes) * 60L;
+        try {
+            return Math.multiplyExact(Math.max(0L, minutes), 60L);
+        } catch (ArithmeticException overflow) {
+            getLogger().warning("protection.duration-minutes 超出支持范围，保护时长按 0 处理。");
+            return 0L;
+        }
     }
 
     /* ------------------------------------------------------------------ */
@@ -614,6 +639,15 @@ public final class NewbieProtect extends JavaPlugin {
     /* ------------------------------------------------------------------ */
     /* 语言                                                                */
     /* ------------------------------------------------------------------ */
+
+    private String consoleText(String key, String fallback, String... placeholders) {
+        String text = langText("console." + key, fallback, placeholders);
+        return text == null ? fallback : text;
+    }
+
+    public String formatDuration(long seconds) {
+        return lang == null ? ProtectionManager.format(seconds) : lang.formatDuration(seconds);
+    }
 
     /** 语言管理器。 */
     public com.newbie.protect.config.LanguageManager getLang() {

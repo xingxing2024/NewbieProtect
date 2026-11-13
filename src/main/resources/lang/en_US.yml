@@ -41,9 +41,13 @@ messages:
 #  Player messages
 # -------------------------------------------------------------------
   join-protected: "&aYou are under newbie protection for &e%time% &a. You won't be harmed by mobs or players."
+  join-inactive: "&7Newbie protection is currently disabled on this server."
+  join-not-protected: "&eYou are not currently protected (%reason%). Remaining: &e%time% &8| &7%timing%"
   join-expired: ""
   join-self-disabled: "&eYou disabled newbie protection last time. Remaining: &e%time%&e. &7%timing%&7. Type &f/newbie on &7to re-enable."
 
+  query-self-inactive: "&7Newbie protection is currently disabled on this server. Remaining: %time%"
+  query-self-not-protected: "&eYou are not currently protected (%reason%). Remaining: &e%time% &8| &7%timing%"
   query-self: "&aYour newbie protection remaining: &e%time%"
   query-self-disabled: "&eYour newbie protection is disabled &8| &eRemaining: %time% &8| &7%timing% &8| &7Type &f/newbie on &7to enable"
   query-self-paused: "&eYour newbie protection remaining: &e%time% &8| &7(%reason%)"
@@ -73,8 +77,13 @@ messages:
 # -------------------------------------------------------------------
 #  Pause reasons (used by boss bar %reason% and admin queries)
 # -------------------------------------------------------------------
-  pause-reason-world: "Not counting time in world %world%"
-  pause-reason-residence: "Not counting time in your own residence"
+  pause-reason-inactive: "Plugin is disabled"
+  pause-reason-admin: "Frozen by an administrator"
+  pause-reason-self: "Protection disabled by player"
+  pause-reason-offline: "Offline"
+  pause-reason-boss-battle: "Boss battle"
+  pause-reason-world: "World %world% rules"
+  pause-reason-residence: "Residence rules"
 
 # -------------------------------------------------------------------
 #  Boss battle
@@ -122,6 +131,9 @@ info:
 
 # Status texts (used by %state%)
 status:
+  inactive: "&7Plugin disabled"
+  boss-battle: "&cBoss battle (protection unavailable)"
+  unprotected: "&eNot protected (%reason%&e)"
   protected: "&aProtected"
   protected-offline: "&bProtected &7(offline, timer paused)"
   disabled: "&cDisabled (by player)"
@@ -148,7 +160,7 @@ list:
 #  /newbie help
 # -------------------------------------------------------------------
 help:
-  title: "  %prefix%%b&lNewbieProtect &7v%version%"
+  title: "  %prefix%&b&lNewbieProtect &7v%version%"
   desc: "  &7Protects new players from mob and player damage for a while"
   player-section: "  &f&lPlayer commands"
   cmd-self: "  &b/newbie &8» &7View your remaining protection time"
@@ -225,12 +237,13 @@ boss-bar:
   title: "&bNewbie protection &7| &e%time% left &8| &7Type &f/newbie off &7to disable"
   title-disabled: "&cProtection disabled &8| &e%time% left &8| &7(%timing%) &8| &7Type &f/newbie on &7to enable"
   title-paused: "&7(%reason%) &8| &e%time% left &8| &7(%timing%)"
-  title-boss-battle: "&4Boss fight &7protection off &8| &e%time% left &8| &7restores in %battle%s"
+  title-boss-battle: "&4Boss fight &7%state% &8| &e%time% left &8| &7restores in %battle%s"
+  state-unprotected: "Unprotected"
   state-on: "Protected"
   # %reason% 在 Boss 战斗状态下显示的文字
   reason-boss-battle: "Boss fight"
   state-disabled: "Disabled"
   timing-note-counting: "Time still counts while disabled"
   timing-note-paused: "Timer paused while disabled"
-  pause-note-counting: "No counting here (time kept)"
+  pause-note-counting: "Time continues to count here"
   pause-note-paused: "Timer paused here"

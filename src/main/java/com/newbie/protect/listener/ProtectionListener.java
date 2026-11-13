@@ -43,7 +43,7 @@ public class ProtectionListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onQuit(PlayerQuitEvent event) {
         plugin.getManager().onQuit(event.getPlayer());
-        // 立即落盘：即使之后服务器被强杀，该玩家的已消耗时间也不会丢
+        // 退出时立即请求后台保存，避免在事件线程执行磁盘 I/O
         plugin.saveOnQuit();
     }
 
@@ -71,7 +71,7 @@ public class ProtectionListener implements Listener {
         // 1) 玩家 PVP（含玩家射出的投射物）
         if (event instanceof EntityDamageByEntityEvent byEntity) {
             Entity damager = byEntity.getDamager();
-            Entity source = resolveSource(damager);
+            Entity source = resolveSource(byEntity);
 
             if (plugin.getConfig().getBoolean("protection.block-player-damage", true)) {
                 if (damager instanceof Player || source instanceof Player) {
@@ -100,7 +100,7 @@ public class ProtectionListener implements Listener {
 
             // 3) 近战怪物伤害
             if (plugin.getConfig().getBoolean("protection.block-mob-damage", true)) {
-                if (damager instanceof LivingEntity && !(damager instanceof Player)) {
+                if (source instanceof LivingEntity && !(source instanceof Player)) {
                     event.setCancelled(true);
                     return;
                 }
@@ -120,16 +120,21 @@ public class ProtectionListener implements Listener {
         }
     }
 
-    /** 把投射物解析成它的发射者；非投射物返回自身。 */
-    private static Entity resolveSource(Entity damager) {
-        if (damager instanceof Projectile projectile) {
-            try {
-                return (Entity) projectile.getShooter();
-            } catch (Throwable ignored) {
-                return null;
-            }
+    /** 事件归属优先，兼容投射物、尖牙及点燃的 TNT。无归属来源仍按环境处理。 */
+    private static Entity resolveSource(EntityDamageByEntityEvent event) {
+        Entity direct = event.getDamager();
+        Entity causing = event.getDamageSource().getCausingEntity();
+        if (causing != null && causing != direct) return causing;
+        if (direct instanceof Projectile projectile) {
+            return projectile.getShooter() instanceof Entity shooter ? shooter : null;
         }
-        return damager;
+        if (direct instanceof org.bukkit.entity.EvokerFangs fangs && fangs.getOwner() != null) {
+            return fangs.getOwner();
+        }
+        if (direct instanceof org.bukkit.entity.TNTPrimed tnt && tnt.getSource() != null) {
+            return tnt.getSource();
+        }
+        return causing != null ? causing : direct;
     }
 
     /* ------------------------------------------------------------------ */
@@ -167,9 +172,10 @@ public class ProtectionListener implements Listener {
      */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = false)
     public void onBossHit(EntityDamageByEntityEvent event) {
-        if (!(event.getDamager() instanceof Player attacker)) {
+        if (!(resolveSource(event) instanceof Player attacker)) {
             return;
         }
+        if (!plugin.getManager().getBossBattle().isEnabled()) return;
         Entity target = event.getEntity();
         if (!plugin.getManager().getBossBattle().isBoss(target)) {
             return;
@@ -190,7 +196,7 @@ public class ProtectionListener implements Listener {
         if (!plugin.getConfig().getBoolean("extra.block-attack-others", false)) {
             return;
         }
-        if (!(event.getDamager() instanceof Player attacker)) {
+        if (!(resolveSource(event) instanceof Player attacker)) {
             return;
         }
         if (!(event.getEntity() instanceof Player)) {

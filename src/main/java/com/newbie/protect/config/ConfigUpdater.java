@@ -277,7 +277,12 @@ public final class ConfigUpdater {
             }
             String line = lines.get(index);
             int colon = line.indexOf(':', indent);
+            // Only a comment with no preceding value denotes a block mapping parent.
+            // Quoted scalars and flow mappings stay opaque and are never expanded.
             String value = colon < 0 ? "" : line.substring(colon + 1).trim();
+            if (value.startsWith("#")) {
+                value = "";
+            }
             Entry entry = new Entry(paths.get(k), indent, start, value);
             entry.end = end;
             parsed.list.add(entry);
