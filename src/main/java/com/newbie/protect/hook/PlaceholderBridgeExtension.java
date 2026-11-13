@@ -49,8 +49,13 @@ public class PlaceholderBridgeExtension extends PlaceholderExpansion {
     }
 
     @Override
+    public String getRequiredPlugin() {
+        return plugin.getName();
+    }
+
+    @Override
     public boolean canRegister() {
-        return true;
+        return !plugin.isShuttingDown();
     }
 
     @Override
@@ -63,42 +68,41 @@ public class PlaceholderBridgeExtension extends PlaceholderExpansion {
         PlayerDataStore.Entry entry = plugin.getDataStore().get(player.getUniqueId());
         long total = plugin.getProtectDurationSeconds();
 
+        ProtectionManager.ProtectionState state = isOnline(online) ? mgr.state(online)
+                : mgr.state(player.getUniqueId());
         long used = entry == null ? 0L : entry.usedSeconds();
-        boolean finished = entry != null && entry.finished();
-        long left = finished ? 0L : Math.max(0L, total - used);
-
-        boolean isOnline = online != null && online.isOnline();
-        boolean paused = isOnline && mgr.isPaused(online);
+        long left = state.remainingSeconds();
+        boolean finished = entry != null && (entry.finished() || "finished".equals(state.statusKey()));
         boolean selfDisabled = entry != null && entry.selfDisabled();
         boolean adminPaused = entry != null && entry.adminPaused();
-        boolean protectedNow = isOnline && mgr.isProtected(online);
+        boolean protectedNow = !plugin.isShuttingDown() && state.protectedNow();
 
         switch (params == null ? "" : params.toLowerCase(Locale.ROOT)) {
             case "time":
             case "left":
             case "remaining":
-                return ProtectionManager.format(left);
+                return plugin.formatDuration(left);
             case "seconds":
             case "left_seconds":
             case "remaining_seconds":
                 return String.valueOf(left);
             case "minutes":
             case "left_minutes":
-                return String.valueOf((left + 59L) / 60L);
+                return String.valueOf(left / 60L + (left % 60L == 0L ? 0L : 1L));
             case "hours":
                 return String.valueOf(left / 3600L);
             case "used":
             case "used_time":
-                return ProtectionManager.format(used);
+                return plugin.formatDuration(used);
             case "used_seconds":
                 return String.valueOf(used);
             case "total":
             case "total_time":
-                return ProtectionManager.format(total);
+                return plugin.formatDuration(total);
             case "total_seconds":
                 return String.valueOf(total);
             case "percent":
-                return total <= 0 ? "0.0" : String.format("%.1f", left * 100.0 / total);
+                return total <= 0 ? "0.0" : String.format(Locale.ROOT, "%.1f", left * 100.0 / total);
             case "percent_int":
                 return total <= 0 ? "0" : String.valueOf(Math.round(left * 100.0 / total));
             case "bar":
@@ -106,15 +110,16 @@ public class PlaceholderBridgeExtension extends PlaceholderExpansion {
             case "bar_symbol":
                 return barSymbol(left, total);
             case "status":
-                return statusText(entry, isOnline, paused, selfDisabled, adminPaused, finished);
+                String statusKey = plugin.isShuttingDown() ? "inactive" : state.statusKey();
+                return plugin.langText("status." + statusKey, statusKey, "%reason%", state.pauseReason());
             case "protected":
             case "is_protected":
                 return String.valueOf(protectedNow);
             case "paused":
             case "is_paused":
-                return String.valueOf(paused || adminPaused);
+                return String.valueOf(state.paused());
             case "pause_reason":
-                return isOnline ? mgr.pauseReason(online) : "";
+                return state.pauseReason();
             case "self_disabled":
                 return String.valueOf(selfDisabled);
             case "admin_paused":
@@ -138,30 +143,14 @@ public class PlaceholderBridgeExtension extends PlaceholderExpansion {
                 return String.valueOf(plugin.isBossBarVisibleTo(player.getUniqueId()));
             case "enabled":
             case "is_enabled":
-                return String.valueOf(plugin.isProtectEnabled());
+                return String.valueOf(!plugin.isShuttingDown() && plugin.isProtectEnabled());
             default:
                 return null;
         }
     }
 
-    private static String statusText(PlayerDataStore.Entry entry, boolean online, boolean paused,
-                                     boolean selfDisabled, boolean adminPaused, boolean finished) {
-        if (entry == null) {
-            return online ? "新人" : "未知";
-        }
-        if (finished) {
-            return "已结束";
-        }
-        if (adminPaused) {
-            return "已冻结";
-        }
-        if (selfDisabled) {
-            return "已关闭";
-        }
-        if (paused) {
-            return "暂停中";
-        }
-        return online ? "保护中" : "保护中(离线)";
+    private static boolean isOnline(Player player) {
+        return player != null && player.isOnline();
     }
 
     private static String barSymbol(long left, long total) {

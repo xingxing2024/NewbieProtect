@@ -35,13 +35,14 @@ public class ProtectionManager {
     private final com.newbie.protect.hook.ResidenceHook residenceHook =
             new com.newbie.protect.hook.ResidenceHook();
     /** 打 Boss 无效化管理器。 */
-    private com.newbie.protect.manager.BossBattleManager bossBattle;
+    private final BossBattleManager bossBattle;
     private SchedulerUtils.Cancellable tickTask;
     /** 是否已彻底关闭（关闭后 tick 不再执行任何逻辑）。 */
     private volatile boolean shutDown = false;
 
     public ProtectionManager(NewbieProtect plugin) {
         this.plugin = plugin;
+        this.bossBattle = new BossBattleManager(plugin);
     }
 
     public com.newbie.protect.hook.ResidenceHook getResidenceHook() {
@@ -49,9 +50,6 @@ public class ProtectionManager {
     }
 
     public com.newbie.protect.manager.BossBattleManager getBossBattle() {
-        if (bossBattle == null) {
-            bossBattle = new com.newbie.protect.manager.BossBattleManager(plugin);
-        }
         return bossBattle;
     }
 
@@ -62,8 +60,9 @@ public class ProtectionManager {
     public void start() {
         stop();
         shutDown = false;
+        bossBattle.reload();
         if (!plugin.isProtectEnabled()) {
-            plugin.getLogger().info("新人保护总开关已关闭，不启动计时任务。");
+            plugin.getLogger().info(reason("console.timer-disabled", "新人保护总开关已关闭，不启动计时任务。"));
             return;
         }
         // 每秒跑一次。
@@ -77,8 +76,8 @@ public class ProtectionManager {
                 plugin.getLogger().warning("新人保护计时循环异常（已忽略，任务继续）: " + t);
             }
         }, 20L, 20L);
-        plugin.getLogger().info("新人保护计时任务已启动（总时长 "
-                + (plugin.getProtectDurationSeconds() / 60) + " 分钟）。");
+        plugin.getLogger().info(reason("console.timer-started", "新人保护计时任务已启动（总时长 %minutes% 分钟）。")
+                .replace("%minutes%", String.valueOf(plugin.getProtectDurationSeconds() / 60)));
     }
 
     /** 停止计时任务并移除全部 Boss 条（用于 reload 后重启）。 */
@@ -99,6 +98,7 @@ public class ProtectionManager {
     public void shutdown() {
         shutDown = true;
         stop();
+        bossBattle.clearAll();
     }
 
     /** 是否已关闭。 */
@@ -134,95 +134,47 @@ public class ProtectionManager {
     }
 
     private void tickOne(Player player, long total) {
-        if (player == null || !player.isOnline()) {
+        if (shutDown || plugin.isShuttingDown() || !plugin.isProtectEnabled()
+                || player == null || !player.isOnline()) {
             return;
         }
         UUID uuid = player.getUniqueId();
         PlayerDataStore store = plugin.getDataStore();
-        PlayerDataStore.Entry entry = store.getOrCreate(uuid, player.getName());
+        PlayerDataStore.Entry entry = store.get(uuid);
+        if (entry == null) return;
 
-        // 兜底 1：绝对到期（防止计时器卡住导致「永久无敌」）
-        // 即使 used-seconds 一直没涨，超过 max-absolute-days 也强制失效
-        long maxDays = plugin.getConfig().getLong("protection.max-absolute-days", 30L);
-        if (maxDays > 0L && entry.firstJoin() > 0L) {
-            long elapsed = System.currentTimeMillis() - entry.firstJoin();
-            if (elapsed > maxDays * 86_400_000L) {
-                if (!entry.finished()) {
-                    entry.usedSeconds(total);
-                    entry.finished(true);
-                    store.markDirty();
-                    plugin.getLogger().info("玩家 " + player.getName()
-                            + " 的新人保护已超过绝对上限 " + maxDays + " 天，强制失效。");
-                }
-                removeBossBar(uuid);
-                wasProtected.put(uuid, false);
-                return;
-            }
-        }
-
-        // 已经结束过保护：确保 Boss 条被移除
-        // 注意：用「剩余时间 <= 0」判断，而不是 usedSeconds >= total，
-        // 这样管理员用 add 加回来的时间能正确生效（usedSeconds 可能为负）。
-        if (entry.finished() || (total - entry.usedSeconds()) <= 0L) {
-            entry.finished(true);
-            boolean was = Boolean.TRUE.equals(wasProtected.put(uuid, false));
-            if (was) {
-                // 刚刚结束
-                removeBossBar(uuid);
-                plugin.sendConfigMessage(player, "expired", null);
+        ProtectionState before = state(player);
+        if (before.remainingSeconds() <= 0L) {
+            if (!entry.finished()) {
+                entry.finished(true);
                 store.markDirty();
-            } else {
-                removeBossBar(uuid);
             }
+            if (Boolean.TRUE.equals(wasProtected.put(uuid, false))) {
+                plugin.sendConfigMessage(player, "expired");
+            }
+            removeBossBar(uuid);
             return;
         }
-
-        // 暂停判定：世界列表 / 自己的领地 / 管理员冻结 / Boss 战斗
-        boolean bossBattle = getBossBattle().isInBattle(player);
-        boolean bossPause = bossBattle && getBossBattle().isPauseTimer();
-        boolean paused = isPaused(player) || entry.adminPaused() || bossPause;
-        // 暂停区域内按配置决定是否照常计时（管理员冻结 / Boss 战斗暂停永远不计时）
-        boolean countThisTick = !entry.adminPaused() && !bossPause
-                && (!paused || isCountInPaused());
-
-        // 累加在线时长
-        // 玩家自己关闭保护时：按配置决定是否继续计时。
-        // 默认继续计时（self-toggle.count-while-disabled: true），
-        // 也就是「关掉保护并不能省下时间」，避免玩家钻空子。
-        boolean selfOff = entry.selfDisabled();
-        boolean countWhileOff = plugin.isSelfToggleEnabled() && plugin.isCountWhileDisabled();
-        if (countThisTick && (!selfOff || countWhileOff)) {
+        if (before.counting()) {
             entry.addUsedSeconds(1L);
             store.markDirty();
         }
-
-        long left = total - entry.usedSeconds();
-        // 暂停区且不保留保护时，等同于「此刻不免伤」
-        boolean effective = !(paused && !isProtectInPaused());
-        boolean nowProtected = left > 0 && !selfOff && effective;
-        // 只有从「非保护」变成「保护」时才提示（正常进服由 onJoin 负责，
-        // 这里覆盖 reload / grant 之后的情形）
-        Boolean prev = wasProtected.put(uuid, nowProtected);
-        if (nowProtected && !Boolean.TRUE.equals(prev)) {
-            plugin.sendConfigMessage(player, "join-protected", "%time%", format(left));
-        }
-
-        if (left <= 0) {
+        ProtectionState now = state(player);
+        long left = now.remainingSeconds();
+        Boolean previous = wasProtected.put(uuid, now.protectedNow());
+        if (left <= 0L) {
             entry.finished(true);
-            removeBossBar(uuid);
-            plugin.sendConfigMessage(player, "expired", null);
             store.markDirty();
+            removeBossBar(uuid);
+            plugin.sendConfigMessage(player, "expired");
             return;
         }
-
-        // 到期提醒（仅在保护实际生效时提醒；玩家自己关掉后不再打扰）
-        if (nowProtected) {
-            checkRemind(player, uuid, left);
+        if (now.protectedNow() && !Boolean.TRUE.equals(previous)) {
+            plugin.sendConfigMessage(player, "join-protected", "%time%", plugin.formatDuration(left));
         }
-
-        // Boss 条：即使玩家自己关闭了保护 / 处于暂停区也继续显示，
-        // 好让玩家看到「时间还在不在走」以及怎么重新开启
-        updateBossBar(player, uuid, left, total, selfOff, paused, bossBattle);
+        if (now.protectedNow()) checkRemind(player, uuid, left);
+        updateBossBar(player, uuid, left, total, entry.selfDisabled(),
+                now.paused() || areaState(player).paused(), getBossBattle().isInBattle(player));
     }
 
     /** 到点提醒（每个档位只提醒一次）。 */
@@ -234,7 +186,7 @@ public class ProtectionManager {
         java.util.Set<Long> sent = reminded.computeIfAbsent(uuid, k -> ConcurrentHashMap.newKeySet());
         for (Long point : list) {
             if (secondsLeft <= point && sent.add(point)) {
-                plugin.sendConfigMessage(player, "ending-soon", "%time%", format(point));
+                plugin.sendConfigMessage(player, "ending-soon", "%time%", plugin.formatDuration(point));
             }
         }
     }
@@ -263,7 +215,7 @@ public class ProtectionManager {
             bossBars.put(uuid, bar);
         }
         try {
-            boolean countInPaused = isCountInPaused();
+            ProtectionState actual = state(player);
             // 四种状态：自己关闭 > Boss 战斗 > 暂停区 > 正常保护中
             String key;
             String fallback;
@@ -291,26 +243,17 @@ public class ProtectionManager {
                 raw = fallback;
             }
 
-            // %timing%：暂停区用 pause-note-*，其他用 timing-note-*
-            String timing = paused
-                    ? (countInPaused
-                            ? plugin.langRaw("boss-bar.pause-note-counting", "此区域不计时（剩余时间保留）")
-                            : plugin.langRaw("boss-bar.pause-note-paused", "此处保护计时已暂停"))
-                    : (plugin.isCountWhileDisabled()
-                            ? plugin.langRaw("boss-bar.timing-note-counting", "时间照常计算")
-                            : plugin.langRaw("boss-bar.timing-note-paused", "计时已暂停"));
+            String timing = timingNote(actual);
 
             // Boss 条标题：支持插件占位符 + PAPI 变量
             String title = plugin.parsePlaceholders(raw, player,
-                    "%time%", format(left),
+                    "%time%", plugin.formatDuration(left),
                     "%seconds%", String.valueOf(left),
                     "%player%", player.getName(),
-                    "%state%", selfOff
-                            ? plugin.langRaw("boss-bar.state-disabled", "已关闭")
-                            : plugin.langRaw("boss-bar.state-on", "保护中"),
-                    "%reason%", bossBattle
-                            ? plugin.langRaw("boss-bar.reason-boss-battle", "Boss 战斗中")
-                            : pauseReason(player),
+                    "%state%", actual.protectedNow()
+                            ? plugin.langRaw("boss-bar.state-on", "保护中")
+                            : plugin.langRaw("boss-bar.state-unprotected", "不受保护"),
+                    "%reason%", actual.pauseReason(),
                     "%battle%", String.valueOf(getBossBattle().battleSecondsLeft(player)),
                     "%timing%", timing,
                     "%toggle-cmd%", selfOff ? "on" : "off");
@@ -389,44 +332,80 @@ public class ProtectionManager {
     /* 对外状态查询                                                        */
     /* ------------------------------------------------------------------ */
 
-    /** 剩余保护秒数；已结束或未开启返回 0。 */
-    public long remainingSeconds(Player player) {
-        long total = plugin.getProtectDurationSeconds();
-        if (total <= 0) {
-            return 0L;
-        }
+    public record ProtectionState(long remainingSeconds, boolean protectedNow, boolean counting,
+                                  boolean paused, String pauseReason, String statusKey) {}
+
+    public ProtectionState state(Player player) {
+        if (player == null) return inactiveState(0L, "unknown", "");
         PlayerDataStore.Entry entry = plugin.getDataStore().get(player.getUniqueId());
-        if (entry == null) {
-            // 还没记录（首次进服前）视为满时长
-            return total;
+        if (entry == null) return inactiveState(0L, "unknown", "");
+        long left = remainingSeconds(entry);
+        if (left <= 0L) return inactiveState(0L, "finished", "");
+        if (shutDown || plugin.isShuttingDown() || !plugin.isProtectEnabled()) {
+            return inactiveState(left, "inactive", reason("messages.pause-reason-inactive", "插件已停用"));
         }
-        if (entry.finished()) {
-            return 0L;
-        }
-        // 绝对到期兜底：与 tickOne 的判断保持一致，
-        // 避免「计时器卡住时事件仍认为在保护中」
-        long maxDays = plugin.getConfig().getLong("protection.max-absolute-days", 30L);
-        if (maxDays > 0L && entry.firstJoin() > 0L
-                && System.currentTimeMillis() - entry.firstJoin() > maxDays * 86_400_000L) {
-            return 0L;
-        }
-        return Math.max(0L, total - entry.usedSeconds());
+        if (!player.isOnline()) return state(player.getUniqueId());
+        AreaState area = areaState(player);
+        boolean battle = bossBattle.isInBattle(player);
+        boolean count = !entry.adminPaused() && !(battle && bossBattle.isPauseTimer())
+                && area.countTime() && (!entry.selfDisabled() || plugin.isCountWhileDisabled());
+        boolean protection = !entry.adminPaused() && !entry.selfDisabled() && area.protectHere()
+                && (!battle || bossBattle.isProtectInBattle());
+        String status = entry.adminPaused() ? "admin-paused" : entry.selfDisabled() ? "disabled"
+                : battle ? "boss-battle" : !count ? "paused" : !protection ? "unprotected" : "protected";
+        String why = entry.adminPaused() ? reason("messages.pause-reason-admin", "管理员冻结")
+                : entry.selfDisabled() && !plugin.isCountWhileDisabled()
+                    ? reason("messages.pause-reason-self", "玩家已关闭保护，计时暂停")
+                : battle ? reason("messages.pause-reason-boss-battle", "Boss 战斗中")
+                : area.paused() ? pauseReason(player) : "";
+        return new ProtectionState(left, protection, count, !count, why, status);
     }
 
-    /** 该玩家此刻是否处于新人保护中（已自助关闭 / 被管理员冻结的玩家不算）。 */
+    /** 离线查询仅访问已保存的记录，不读取实体位置，也不创建保护。 */
+    public ProtectionState state(UUID uuid) {
+        PlayerDataStore.Entry entry = uuid == null ? null : plugin.getDataStore().get(uuid);
+        if (entry == null) return inactiveState(0L, "unknown", "");
+        long left = remainingSeconds(entry);
+        if (left <= 0L) return inactiveState(0L, "finished", "");
+        if (shutDown || plugin.isShuttingDown() || !plugin.isProtectEnabled()) {
+            return inactiveState(left, "inactive", reason("messages.pause-reason-inactive", "插件已停用"));
+        }
+        String status = entry.adminPaused() ? "admin-paused" : entry.selfDisabled() ? "disabled" : "protected-offline";
+        String why = entry.adminPaused() ? reason("messages.pause-reason-admin", "管理员冻结")
+                : reason("messages.pause-reason-offline", "玩家离线，计时暂停");
+        return inactiveState(left, status, why);
+    }
+
+    private ProtectionState inactiveState(long left, String status, String why) {
+        return new ProtectionState(left, false, false, left > 0, why, status);
+    }
+
+    private String reason(String key, String fallback) {
+        String text = plugin.langText(key, fallback);
+        return text == null ? fallback : text;
+    }
+
+    public long remainingSeconds(Player player) {
+        return player == null ? 0L : remainingSeconds(plugin.getDataStore().get(player.getUniqueId()));
+    }
+
+    private long remainingSeconds(PlayerDataStore.Entry entry) {
+        long total = plugin.getProtectDurationSeconds();
+        if (entry == null || entry.finished() || total <= 0L) return 0L;
+        long maxDays = plugin.getConfig().getLong("protection.max-absolute-days", 30L);
+        if (maxDays > 0L && entry.firstJoin() > 0L
+                && System.currentTimeMillis() - entry.firstJoin() > java.util.concurrent.TimeUnit.DAYS.toMillis(maxDays)) {
+            return 0L;
+        }
+        try {
+            return Math.max(0L, Math.subtractExact(total, entry.usedSeconds()));
+        } catch (ArithmeticException overflow) {
+            return Long.MAX_VALUE;
+        }
+    }
+
     public boolean isProtected(Player player) {
-        if (!plugin.isProtectEnabled() || remainingSeconds(player) <= 0L) {
-            return false;
-        }
-        if (isSelfDisabled(player) || isAdminPaused(player)) {
-            return false;
-        }
-        // 打 Boss 战斗中且配置了「战斗不保护」→ 无效化
-        if (getBossBattle().isInBattle(player) && !getBossBattle().isProtectInBattle()) {
-            return false;
-        }
-        // 暂停区域内如果配置了「取消免伤」，则视为没有保护
-        return !(isPaused(player) && !isProtectInPaused());
+        return state(player).protectedNow();
     }
 
     /* ------------------------------------------------------------------ */
@@ -443,23 +422,41 @@ public class ProtectionManager {
      * </ol>
      */
     public boolean isPaused(Player player) {
-        if (player == null) {
-            return false;
-        }
+        return areaState(player).paused();
+    }
+
+    private record AreaState(boolean paused, boolean countTime, boolean protectHere) {}
+
+    /** 只应用当前位置命中的规则；重叠时暂停 / 禁止免伤优先。 */
+    private AreaState areaState(Player player) {
+        boolean paused = false;
+        boolean count = true;
+        boolean protect = true;
+        if (player == null) return new AreaState(false, true, true);
         try {
-            // 1) 世界列表
             if (plugin.isWorldListEnabled() && inListedWorld(player)) {
-                return true;
+                paused = true;
+                count &= plugin.getConfig().getBoolean("world-list.count-while-in-paused-world", false);
+                protect &= plugin.getConfig().getBoolean("world-list.protect-in-paused-world", false);
             }
-            // 2) 自己的领地
             if (plugin.isResidenceEnabled() && residenceHook.isAvailable()
                     && residenceHook.isInOwnResidence(player, plugin.isResidenceOwnerOnly())) {
-                return true;
+                paused = true;
+                count &= plugin.getConfig().getBoolean("residence.count-while-inside", false);
+                protect &= plugin.getConfig().getBoolean("residence.protect-in-own-residence", false);
             }
-        } catch (Throwable ignored) {
-            // 任一判断出错都当作「不暂停」，保证不会意外卡住计时
+        } catch (RuntimeException ignored) {
+            // 保留已判定的规则；集成暂不可用时跳过该集成。
         }
-        return false;
+        return new AreaState(paused, count, protect);
+    }
+
+    public boolean isCountInPaused(Player player) {
+        return areaState(player).countTime();
+    }
+
+    public boolean isProtectInPaused(Player player) {
+        return areaState(player).protectHere();
     }
 
     private boolean inListedWorld(Player player) {
@@ -475,8 +472,9 @@ public class ProtectionManager {
     /**
      * 暂停区域内，保护计时是否照常计算（true = 照常扣时间）。
      *
-     * <p>世界和领地分别可配，任何一项设为「照常计算」都优先扣时间。</p>
+     * @deprecated 仅汇总配置；实际玩家规则请使用带 Player 参数的方法。
      */
+    @Deprecated
     public boolean isCountInPaused() {
         return plugin.getConfig().getBoolean("world-list.count-while-in-paused-world", false)
                 || plugin.getConfig().getBoolean("residence.count-while-inside", false);
@@ -485,6 +483,7 @@ public class ProtectionManager {
     /**
      * 暂停区域内，是否保留免伤保护（true = 仍然免伤）。
      */
+    @Deprecated
     public boolean isProtectInPaused() {
         return plugin.getConfig().getBoolean("world-list.protect-in-paused-world", false)
                 || plugin.getConfig().getBoolean("residence.protect-in-own-residence", false);
@@ -497,12 +496,12 @@ public class ProtectionManager {
         }
         if (plugin.isWorldListEnabled() && inListedWorld(player)) {
             String name = player.getWorld() == null ? "?" : player.getWorld().getName();
-            return plugin.langText("messages.pause-reason-world", "世界 %world% 内不计时",
+            return plugin.langText("messages.pause-reason-world", "世界 %world% 区域规则",
                     "%world%", name);
         }
         if (plugin.isResidenceEnabled() && residenceHook.isAvailable()
                 && residenceHook.isInOwnResidence(player, plugin.isResidenceOwnerOnly())) {
-            return plugin.langText("messages.pause-reason-residence", "自己领地内不计时");
+            return plugin.langText("messages.pause-reason-residence", "领地区域规则");
         }
         return "";
     }
@@ -539,35 +538,46 @@ public class ProtectionManager {
      * @return true 表示设置成功
      */
     public boolean setRemainingSeconds(Player player, long seconds) {
-        if (player == null) {
-            return false;
-        }
-        PlayerDataStore store = plugin.getDataStore();
-        PlayerDataStore.Entry entry = store.getOrCreate(player.getUniqueId(), player.getName());
-        long total = plugin.getProtectDurationSeconds();
-        long clamped = Math.max(0L, seconds);
-        entry.usedSeconds(Math.max(0L, total - clamped));
-        entry.finished(clamped <= 0L);
-        store.markDirty();
+        if (player == null || seconds < 0L) return false;
+        setRemainingSeconds(player.getUniqueId(), player.getName(), seconds);
         refresh(player);
         return true;
+    }
+
+    public void setRemainingSeconds(UUID uuid, String name, long seconds) {
+        if (seconds < 0L) throw new IllegalArgumentException("Negative remaining duration");
+        PlayerDataStore.Entry entry = plugin.getDataStore().getOrCreate(uuid, name);
+        long old = remainingSeconds(entry);
+        long total = Math.max(0L, plugin.getProtectDurationSeconds());
+        entry.usedSeconds(total - seconds);
+        entry.finished(seconds == 0L);
+        if (seconds > 0L && old <= 0L) entry.firstJoin(System.currentTimeMillis());
+        if (seconds > old) reminded.remove(uuid);
+        wasProtected.remove(uuid);
+        plugin.getDataStore().markDirty();
+    }
+
+    public void resetRecord(UUID uuid, String name, long seconds) {
+        PlayerDataStore.Entry entry = plugin.getDataStore().reset(uuid, name);
+        entry.usedSeconds(Math.max(0L, plugin.getProtectDurationSeconds()) - Math.max(0L, seconds));
+        entry.finished(seconds <= 0L);
+        onRecordCleared(uuid);
+        plugin.getDataStore().markDirty();
+    }
+
+    public void onRecordCleared(UUID uuid) {
+        reminded.remove(uuid);
+        wasProtected.remove(uuid);
+        removeBossBar(uuid);
+        bossBattle.clear(uuid);
     }
 
     /**
      * 管理员清空（重置）玩家的保护记录，让他重新变回新人。
      */
     public void resetPlayer(Player player) {
-        if (player == null) {
-            return;
-        }
-        PlayerDataStore store = plugin.getDataStore();
-        PlayerDataStore.Entry entry = store.getOrCreate(player.getUniqueId(), player.getName());
-        entry.usedSeconds(0L);
-        entry.finished(false);
-        entry.selfDisabled(false);
-        entry.adminPaused(false);
-        entry.firstJoin(System.currentTimeMillis());
-        store.markDirty();
+        if (player == null) return;
+        resetRecord(player.getUniqueId(), player.getName(), plugin.getProtectDurationSeconds());
         refresh(player);
     }
 
@@ -585,10 +595,11 @@ public class ProtectionManager {
                     wasProtected.put(uuid, false);
                     return;
                 }
-                boolean paused = isPaused(player);
+                boolean paused = isPaused(player) || isAdminPaused(player)
+                        || (getBossBattle().isInBattle(player) && getBossBattle().isPauseTimer());
                 updateBossBar(player, uuid, left, plugin.getProtectDurationSeconds(),
                         isSelfDisabled(player), paused, getBossBattle().isInBattle(player));
-                wasProtected.put(uuid, !isSelfDisabled(player));
+                wasProtected.put(uuid, isProtected(player));
             } catch (Throwable ignored) {
                 // 忽略
             }
@@ -642,39 +653,42 @@ public class ProtectionManager {
 
     /** 玩家进服时调用：初始化会话状态。 */
     public void onJoin(Player player) {
-        if (!plugin.isProtectEnabled()) {
-            return;
-        }
-        long total = plugin.getProtectDurationSeconds();
-        if (total <= 0) {
-            return;
-        }
+        if (!plugin.isProtectEnabled() || plugin.isShuttingDown() || shutDown) return;
         UUID uuid = player.getUniqueId();
-        PlayerDataStore.Entry entry = plugin.getDataStore().getOrCreate(uuid, player.getName());
-        if (entry.finished()) {
-            plugin.sendConfigMessage(player, "join-expired", null);
-            wasProtected.put(uuid, false);
+        PlayerDataStore.Entry entry = plugin.getDataStore().get(uuid);
+        if (entry == null) {
+            if (!plugin.getConfig().getBoolean("protection.start-on-first-join", true)
+                    || plugin.getProtectDurationSeconds() <= 0L) return;
+            entry = plugin.getDataStore().getOrCreate(uuid, player.getName());
+        }
+        ProtectionState current = state(player);
+        wasProtected.put(uuid, current.protectedNow());
+        if (current.remainingSeconds() <= 0L) {
+            plugin.sendConfigMessage(player, "join-expired");
             removeBossBar(uuid);
-            return;
-        }
-        long left = Math.max(0L, total - entry.usedSeconds());
-        if (entry.selfDisabled()) {
-            // 上次自己关掉了保护，这次进服提醒一下怎么重新开启
-            plugin.sendConfigMessage(player, "join-self-disabled",
-                    "%time%", format(left),
-                    "%timing%", timingNote());
-            wasProtected.put(uuid, false);
+        } else if (entry.selfDisabled()) {
+            plugin.sendConfigMessage(player, "join-self-disabled", "%time%", plugin.formatDuration(current.remainingSeconds()),
+                    "%timing%", timingNote(current));
+        } else if (current.protectedNow()) {
+            plugin.sendConfigMessage(player, "join-protected", "%time%", plugin.formatDuration(current.remainingSeconds()));
         } else {
-            plugin.sendConfigMessage(player, "join-protected", "%time%", format(left));
-            wasProtected.put(uuid, left > 0);
+            plugin.sendConfigMessage(player, "join-not-protected", "%time%", plugin.formatDuration(current.remainingSeconds()),
+                    "%reason%", current.pauseReason(), "%timing%", timingNote(current));
         }
+    }
+
+    /** 文本和实际计时使用同一状态，不由自助开关配置推测。 */
+    public String timingNote(ProtectionState state) {
+        return state.counting()
+                ? plugin.langRaw("boss-bar.pause-note-counting", "时间照常计算")
+                : plugin.langRaw("boss-bar.pause-note-paused", "计时已暂停");
     }
 
     /** 「关闭期间计时规则」的说明文字（供消息/Boss 条使用）。 */
     public String timingNote() {
         return plugin.isCountWhileDisabled()
-                ? "保护时间仍在继续倒计时（关闭期间不返还时间）"
-                : "保护计时已暂停，剩余时间不会被消耗";
+                ? plugin.langRaw("boss-bar.timing-note-counting", "保护时间仍在继续倒计时")
+                : plugin.langRaw("boss-bar.timing-note-paused", "保护计时已暂停，剩余时间保留");
     }
 
     /** 玩家退服时调用：移除 Boss 条并清掉会话缓存。 */
@@ -683,7 +697,7 @@ public class ProtectionManager {
         removeBossBar(uuid);
         reminded.remove(uuid);
         wasProtected.remove(uuid);
-        getBossBattle().clear(uuid);
+        // 保留战斗时间戳，防止重登绕过脱战超时。
     }
 
     /** reload 时清理全部界面状态。 */
@@ -698,9 +712,7 @@ public class ProtectionManager {
         bossBars.clear();
         reminded.clear();
         wasProtected.clear();
-        if (bossBattle != null) {
-            bossBattle.clearAll();
-        }
+
     }
 
     /** 已在显示 Boss 条的玩家数量（诊断用）。 */

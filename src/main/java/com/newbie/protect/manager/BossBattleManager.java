@@ -2,6 +2,8 @@ package com.newbie.protect.manager;
 
 import com.newbie.protect.NewbieProtect;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.Boss;
+import java.util.EnumSet;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
@@ -34,9 +36,11 @@ public class BossBattleManager {
     private final Set<UUID> notified = ConcurrentHashMap.newKeySet();
 
     private final NewbieProtect plugin;
+    private volatile Set<EntityType> bossTypes = Set.of();
 
     public BossBattleManager(NewbieProtect plugin) {
         this.plugin = plugin;
+        reload();
     }
 
     /* ------------------------------------------------------------------ */
@@ -47,33 +51,18 @@ public class BossBattleManager {
      * 该实体是否算 Boss。
      */
     public boolean isBoss(Entity entity) {
-        if (!(entity instanceof LivingEntity living)) {
+        if (!isEnabled() || !(entity instanceof LivingEntity living)) {
             return false;
         }
         EntityType type = living.getType();
 
-        // 1) 内置 + 自定义名单
-        if (builtinBosses().contains(type)) {
+        // 名单在启动 / reload 时解析，避免每次伤害事件重复分配集合。
+        if (bossTypes.contains(living.getType())) {
             return true;
         }
-        if (customBosses().contains(type)) {
+        if (plugin.getConfig().getBoolean("boss-battle.count-bossbar-entities", true)
+                && living instanceof Boss) {
             return true;
-        }
-
-        // 2) 带 Boss 血条的实体（末影龙 / 凋灵等）
-        if (plugin.getConfig().getBoolean("boss-battle.count-bossbar-entities", true)) {
-            try {
-                java.util.Iterator<org.bukkit.boss.KeyedBossBar> it =
-                        living.getServer().getBossBars();
-                while (it.hasNext()) {
-                    org.bukkit.boss.KeyedBossBar bar = it.next();
-                    if (bar.getPlayers().contains(living)) {
-                        return true;
-                    }
-                }
-            } catch (Throwable ignored) {
-                // 忽略，继续其他判断
-            }
         }
 
         // 3) 自定义名称里含 boss 的实体（很多服这么标记 Boss 怪）
@@ -112,26 +101,18 @@ public class BossBattleManager {
         }
     }
 
-    private Set<EntityType> builtinBosses() {
-        Set<EntityType> set = ConcurrentHashMap.newKeySet();
+    /** 配置重载时刷新名单，随后事件只读取不可变集合。 */
+    public void reload() {
+        Set<EntityType> types = EnumSet.noneOf(EntityType.class);
         for (String raw : stringListOr("boss-battle.builtin-bosses", DEFAULT_BOSSES)) {
-            EntityType t = parseType(raw);
-            if (t != null) {
-                set.add(t);
-            }
+            EntityType type = parseType(raw);
+            if (type != null) types.add(type);
         }
-        return set;
-    }
-
-    private Set<EntityType> customBosses() {
-        Set<EntityType> set = ConcurrentHashMap.newKeySet();
         for (String raw : stringListOr("boss-battle.custom-bosses", List.of())) {
-            EntityType t = parseType(raw);
-            if (t != null) {
-                set.add(t);
-            }
+            EntityType type = parseType(raw);
+            if (type != null) types.add(type);
         }
-        return set;
+        bossTypes = Set.copyOf(types);
     }
 
     private static EntityType parseType(String raw) {
@@ -161,7 +142,7 @@ public class BossBattleManager {
         }
         long now = System.currentTimeMillis();
         Long prev = lastBossHit.put(player.getUniqueId(), now);
-        boolean first = prev == null || !isInBattle(player);
+        boolean first = prev == null || now - prev > timeoutMillis();
 
         if (first) {
             notified.add(player.getUniqueId());
@@ -169,8 +150,8 @@ public class BossBattleManager {
             plugin.sendConfigMessage(player, "boss-battle-enter",
                     "%boss%", bossName,
                     "%timing%", isPauseTimer()
-                            ? plugin.langText("boss-battle-timing-paused", "保护计时已暂停")
-                            : plugin.langText("boss-battle-timing-continue", "保护计时继续"));
+                            ? plugin.langText("messages.boss-battle-timing-paused", "保护计时已暂停")
+                            : plugin.langText("messages.boss-battle-timing-continue", "保护计时继续"));
             plugin.getLogger().info("玩家 " + player.getName()
                     + " 攻击了 Boss(" + bossName + ")，进入 Boss 战斗状态，保护暂时失效。");
         }
@@ -185,15 +166,21 @@ public class BossBattleManager {
         if (last == null) {
             return false;
         }
-        long timeout = Math.max(1L, plugin.getConfig()
-                .getLong("boss-battle.battle-timeout-seconds", 15L)) * 1000L;
+        long timeout = timeoutMillis();
         if (System.currentTimeMillis() - last > timeout) {
             // 超时，清掉记录
-            lastBossHit.remove(player.getUniqueId());
-            notified.remove(player.getUniqueId());
-            return false;
+            if (lastBossHit.remove(player.getUniqueId(), last)) {
+                notified.remove(player.getUniqueId());
+                return false;
+            }
+            return true;
         }
         return true;
+    }
+
+    private long timeoutMillis() {
+        long seconds = Math.max(1L, plugin.getConfig().getLong("boss-battle.battle-timeout-seconds", 15L));
+        return java.util.concurrent.TimeUnit.SECONDS.toMillis(seconds);
     }
 
     /** 战斗中是否暂停计时。 */
@@ -215,8 +202,7 @@ public class BossBattleManager {
         if (last == null) {
             return 0L;
         }
-        long timeout = Math.max(1L, plugin.getConfig()
-                .getLong("boss-battle.battle-timeout-seconds", 15L)) * 1000L;
+        long timeout = timeoutMillis();
         long left = timeout - (System.currentTimeMillis() - last);
         return Math.max(0L, left / 1000L);
     }
@@ -226,8 +212,7 @@ public class BossBattleManager {
         StringBuilder sb = new StringBuilder();
         sb.append("内置/自定义名单: ");
         Set<EntityType> all = ConcurrentHashMap.newKeySet();
-        all.addAll(builtinBosses());
-        all.addAll(customBosses());
+        all.addAll(bossTypes);
         if (all.isEmpty()) {
             sb.append("(空)");
         } else {

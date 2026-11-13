@@ -12,6 +12,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * 语言管理器。
@@ -37,11 +38,27 @@ public final class LanguageManager {
     /** 内置支持的语言（会在启动时释放到 lang/ 目录）。 */
     public static final String[] BUNDLED_LANGS = {"zh_CN", "en_US"};
 
+    // Exact 1.1.1 bundled values only. Similar-looking user overrides remain untouched.
+    private static final Map<String, String> LEGACY_ENGLISH = Map.of(
+            "help.title", "  %prefix%%b&lNewbieProtect &7v%version%",
+            "boss-bar.pause-note-counting", "No counting here (time kept)",
+            "messages.pause-reason-world", "Not counting time in world %world%",
+            "messages.pause-reason-residence", "Not counting time in your own residence",
+            "boss-bar.title-boss-battle", "&4Boss fight &7protection off &8| &e%time% left &8| &7restores in %battle%s");
+    private static final Map<String, String> LEGACY_CHINESE = Map.of(
+            "help.title", "  %prefix%%b&l新人保护 &7v%version%",
+            "boss-bar.pause-note-counting", "此区域不计时（剩余时间保留）",
+            "messages.pause-reason-world", "世界 %world% 内不计时",
+            "messages.pause-reason-residence", "自己领地内不计时",
+            "boss-bar.title-boss-battle", "&4Boss 战斗中 &7保护失效 &8| &e剩余 %time% &8| &7脱战 %battle% 秒后恢复");
+
     private final NewbieProtect plugin;
     private final File langDir;
 
     /** 当前生效的语言配置。 */
     private YamlConfiguration current;
+    /** 当前语言的内置资源，供旧文件缺失新键时使用。 */
+    private YamlConfiguration builtinCurrent;
     /** 兜底语言配置。 */
     private YamlConfiguration fallback;
     /** 内置默认（从 jar 读取，永远可用）。 */
@@ -119,7 +136,9 @@ public final class LanguageManager {
 
         this.current = loaded;
         this.currentCode = want;
-        plugin.getLogger().info("已加载语言: " + getLanguageName() + " (" + want + ")");
+        this.builtinCurrent = want.equals(FALLBACK_LANG) ? builtinDefault : readBundled(want);
+        plugin.getLogger().info(getRawWith("console.lang-loaded", "Loaded language: %lang% (%code%)",
+                "%lang%", getLanguageName(), "%code%", want));
         return want;
     }
 
@@ -163,6 +182,28 @@ public final class LanguageManager {
         return currentCode;
     }
 
+    /** Format a duration using the active language, retaining the existing Chinese fallback. */
+    public String formatDuration(long seconds) {
+        boolean english = currentCode.toLowerCase(Locale.ROOT).startsWith("en_");
+        String hourUnit = english ? "h" : "时";
+        String minuteUnit = english ? "m" : "分";
+        String secondUnit = english ? "s" : "秒";
+        if (seconds <= 0L) {
+            return "0" + secondUnit;
+        }
+        long hours = seconds / 3600L;
+        long minutes = (seconds % 3600L) / 60L;
+        long secs = seconds % 60L;
+        StringBuilder out = new StringBuilder();
+        if (hours > 0L) {
+            out.append(hours).append(hourUnit);
+        }
+        if (minutes > 0L) {
+            out.append(minutes).append(minuteUnit);
+        }
+        return out.append(secs).append(secondUnit).toString();
+    }
+
     /** 当前语言显示名，如 简体中文。 */
     public String getLanguageName() {
         String name = getRaw("language.name");
@@ -170,15 +211,18 @@ public final class LanguageManager {
     }
 
     /**
-     * 取原始文本（未做颜色转换），按 当前语言 → 兜底语言 → 内置 → 默认值 的顺序。
+     * 取原始文本（未做颜色转换），按 当前语言 → 当前内置资源 → 兜底语言 → 中文内置 → 默认值 的顺序。
      *
      * @param key          配置路径，如 {@code messages.query-self}
      * @param defaultValue 全都找不到时返回的值（可为 null）
      */
     public String getRaw(String key, String defaultValue) {
-        String v = lookup(current, key);
+        String v = lookupWithLegacyDefaults(current, builtinCurrent, currentCode, key);
         if (v == null) {
-            v = lookup(fallback, key);
+            v = lookup(builtinCurrent, key);
+        }
+        if (v == null) {
+            v = lookupWithLegacyDefaults(fallback, builtinDefault, FALLBACK_LANG, key);
         }
         if (v == null) {
             v = lookup(builtinDefault, key);
@@ -188,6 +232,27 @@ public final class LanguageManager {
 
     public String getRaw(String key) {
         return getRaw(key, null);
+    }
+
+    /** Resolve known obsolete stock text in memory; never rewrite administrator files. */
+    private static String lookupWithLegacyDefaults(YamlConfiguration yaml, YamlConfiguration bundled,
+                                                   String code, String key) {
+        String value = lookup(yaml, key);
+        if (value == null || key == null) {
+            return value;
+        }
+        Map<String, String> legacy = switch (code) {
+            case "en_US" -> LEGACY_ENGLISH;
+            case "zh_CN" -> LEGACY_CHINESE;
+            default -> Map.of();
+        };
+        if (value.equals(legacy.get(key))) {
+            String replacement = lookup(bundled, key);
+            if (replacement != null) {
+                return replacement;
+            }
+        }
+        return value;
     }
 
     private static String lookup(YamlConfiguration yaml, String key) {

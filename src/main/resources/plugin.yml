@@ -3,6 +3,7 @@ version: '${project.version}'
 main: com.newbie.protect.NewbieProtect
 api-version: 1.13
 folia-supported: true
+softdepend: [PlaceholderAPI, Residence]
 author: NewbieProtect
 description: 新人保护 - 首次进入服务器的玩家在一定时长内免受怪物与玩家伤害
 commands:

@@ -2,12 +2,21 @@ package com.newbie.protect.data;
 
 import com.newbie.protect.NewbieProtect;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.yaml.snakeyaml.LoaderOptions;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
+import java.nio.file.Files;
+import java.nio.charset.StandardCharsets;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.List;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 新人保护数据存储。
@@ -76,11 +85,11 @@ public class PlayerDataStore {
             return uuid;
         }
 
-        public String name() {
+        public synchronized String name() {
             return name;
         }
 
-        public void name(String name) {
+        public synchronized void name(String name) {
             this.name = name;
         }
 
@@ -91,12 +100,12 @@ public class PlayerDataStore {
          * 例如总时长 6 小时、玩家被 {@code /newbie add 6h} 加了 6 小时，
          * 这里就是 -21600，剩余 = 21600 - (-21600) = 43200 秒（12 小时）。</p>
          */
-        public long usedSeconds() {
+        public synchronized long usedSeconds() {
             return usedSeconds;
         }
 
         /** 增加已消耗秒数（可为负，表示送时间）。 */
-        public void addUsedSeconds(long seconds) {
+        public synchronized void addUsedSeconds(long seconds) {
             this.usedSeconds = this.usedSeconds + seconds;
         }
 
@@ -105,124 +114,201 @@ public class PlayerDataStore {
          *
          * <p>注意：<b>不再钳到 0</b>，否则管理员加的时长会丢失。</p>
          */
-        public void usedSeconds(long seconds) {
+        public synchronized void usedSeconds(long seconds) {
             this.usedSeconds = seconds;
         }
 
         /** 首次进服时间戳。 */
-        public long firstJoin() {
+        public synchronized long firstJoin() {
             return firstJoin;
         }
 
-        public void firstJoin(long millis) {
+        public synchronized void firstJoin(long millis) {
             this.firstJoin = millis;
         }
 
         /** 是否已用尽保护（保护结束）。 */
-        public boolean finished() {
+        public synchronized boolean finished() {
             return finished;
         }
 
-        public void finished(boolean finished) {
+        public synchronized void finished(boolean finished) {
             this.finished = finished;
         }
 
         /** 玩家是否自己关闭了保护（关闭期间不免伤，但计时按配置可能继续）。 */
-        public boolean selfDisabled() {
+        public synchronized boolean selfDisabled() {
             return selfDisabled;
         }
 
-        public void selfDisabled(boolean selfDisabled) {
+        public synchronized void selfDisabled(boolean selfDisabled) {
             this.selfDisabled = selfDisabled;
         }
 
         /** 管理员是否冻结了该玩家的计时（冻结期间不免伤也不扣时间）。 */
-        public boolean adminPaused() {
+        public synchronized boolean adminPaused() {
             return adminPaused;
         }
 
-        public void adminPaused(boolean adminPaused) {
+        public synchronized void adminPaused(boolean adminPaused) {
             this.adminPaused = adminPaused;
         }
 
         /** 玩家是否自己关掉了 Boss 条显示。 */
-        public boolean bossBarHidden() {
+        public synchronized boolean bossBarHidden() {
             return bossBarHidden;
         }
 
-        public void bossBarHidden(boolean bossBarHidden) {
+        public synchronized void bossBarHidden(boolean bossBarHidden) {
             this.bossBarHidden = bossBarHidden;
+        }
+        private synchronized Entry snapshot() {
+            return new Entry(uuid, name, usedSeconds, firstJoin, finished,
+                    selfDisabled, adminPaused, bossBarHidden);
         }
     }
 
     private final NewbieProtect plugin;
     private final File file;
     private final Map<UUID, Entry> cache = new HashMap<>();
-    private final Object ioLock = new Object();
-    private volatile boolean dirty = false;
+    private final Object cacheLock = new Object();
+    private final Object writeLock = new Object();
+    private final AtomicLong revision = new AtomicLong();
+    private volatile long savedRevision;
+    private final AtomicBoolean saveQueued = new AtomicBoolean();
+    private final AtomicBoolean saveRequested = new AtomicBoolean();
+    private final ExecutorService writer = Executors.newSingleThreadExecutor(task -> {
+        Thread thread = new Thread(task, "NewbieProtect-DataWriter");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private volatile boolean closing;
+    private volatile boolean loadHealthy = true;
+    private final AtomicYamlFile yamlFile;
 
     public PlayerDataStore(NewbieProtect plugin) {
+        this(plugin, new AtomicYamlFile(new File(plugin.getDataFolder(), "data.yml").toPath()));
+    }
+
+    PlayerDataStore(NewbieProtect plugin, AtomicYamlFile yamlFile) {
         this.plugin = plugin;
         this.file = new File(plugin.getDataFolder(), "data.yml");
+        this.yamlFile = yamlFile;
     }
 
     /* ------------------------------------------------------------------ */
     /* 读取 / 保存                                                          */
     /* ------------------------------------------------------------------ */
 
+    /** A failed read disables every disk write until an explicit successful load. */
+    public boolean isLoadHealthy() {
+        return loadHealthy;
+    }
+
     public void load() {
-        synchronized (ioLock) {
-            cache.clear();
-            if (!file.isFile()) {
-                return;
-            }
-            try {
-                YamlConfiguration yaml = YamlConfiguration.loadConfiguration(file);
-                var section = yaml.getConfigurationSection("players");
-                if (section == null) {
-                    return;
-                }
-                for (String key : section.getKeys(false)) {
-                    UUID uuid;
-                    try {
-                        uuid = UUID.fromString(key);
-                    } catch (IllegalArgumentException e) {
-                        continue;
+        long startingRevision = revision.get();
+        // Same lock order as save: a queued snapshot cannot overwrite a newly loaded file.
+        synchronized (writeLock) {
+            synchronized (cacheLock) {
+                try {
+                    Map<UUID, Entry> loaded = new HashMap<>();
+                    if (!Files.notExists(file.toPath())) {
+                        String contents = Files.readString(file.toPath(), StandardCharsets.UTF_8);
+                        // Unlike loadConfiguration, this API propagates parse errors.
+                        new YamlConfiguration().loadFromString(contents);
+                        // Inspect raw values too: Bukkit normalizes nulls away and coerces getters.
+                        // Reject duplicate keys rather than silently discarding an earlier record.
+                        LoaderOptions options = new LoaderOptions();
+                        options.setAllowDuplicateKeys(false);
+                        Object document = new Yaml(new SafeConstructor(options)).load(contents);
+                        if (document != null) {
+                            if (!(document instanceof Map<?, ?> root)) {
+                                throw new IllegalArgumentException("data.yml root must be a mapping");
+                            }
+                            Object players = root.get("players");
+                            if (players == null && !root.isEmpty()) {
+                                throw new IllegalArgumentException("players must be a mapping");
+                            }
+                            if (players != null) {
+                                if (!(players instanceof Map<?, ?> records)) {
+                                    throw new IllegalArgumentException("players must be a mapping");
+                                }
+                                for (var record : records.entrySet()) {
+                                    String key = String.valueOf(record.getKey());
+                                    UUID uuid = UUID.fromString(key);
+                                    if (!uuid.toString().equalsIgnoreCase(key) || loaded.containsKey(uuid)) {
+                                        throw new IllegalArgumentException("Invalid or duplicate player UUID: " + key);
+                                    }
+                                    if (!(record.getValue() instanceof Map<?, ?> fields)) {
+                                        throw new IllegalArgumentException("Player entry must be a mapping: " + key);
+                                    }
+                                    long used = readLong(fields, "used-seconds");
+                                    long firstJoin = readLong(fields, "first-join");
+                                    if (firstJoin < 0) throw new IllegalArgumentException("Negative first-join: " + key);
+                                    Object name = fields.get("name");
+                                    if (fields.containsKey("name") && !(name instanceof String)) {
+                                        throw new IllegalArgumentException("Player name must be a string: " + key);
+                                    }
+                                    loaded.put(uuid, new Entry(uuid, name == null ? "" : (String) name,
+                                            used, firstJoin, readBoolean(fields, "finished"),
+                                            readBoolean(fields, "self-disabled"), readBoolean(fields, "admin-paused"),
+                                            readBoolean(fields, "bossbar-hidden")));
+                                }
+                            }
+                        }
+                    } else if (!cache.isEmpty()) {
+                        throw new IOException("data.yml disappeared while player records remain in memory");
                     }
-                    // 数据校验：防止手工改坏 / 异常写入导致脏数据。
-                    // 注意：used-seconds 允许为负（= 管理员额外赠送的时间），不能钳到 0，
-                    // 否则重启后赠送的时长会丢失。
-                    long used = section.getLong(key + ".used-seconds", 0L);
-                    long firstJoin = section.getLong(key + ".first-join", 0L);
-                    if (firstJoin < 0L) {
-                        firstJoin = 0L;
+                    // Entry callers may mark a mutation while I/O is in progress. Never discard it.
+                    if (revision.get() != startingRevision) {
+                        throw new IllegalStateException("Player data changed during load; retry while quiescent");
                     }
-                    cache.put(uuid, new Entry(
-                            uuid,
-                            section.getString(key + ".name", ""),
-                            used,
-                            firstJoin,
-                            section.getBoolean(key + ".finished", false),
-                            section.getBoolean(key + ".self-disabled", false),
-                            section.getBoolean(key + ".admin-paused", false),
-                            section.getBoolean(key + ".bossbar-hidden", false)
-                    ));
+                    cache.clear();
+                    cache.putAll(loaded);
+                    savedRevision = startingRevision;
+                    loadHealthy = true;
+                    long finished = loaded.values().stream().filter(Entry::finished).count();
+                    String loadedMessage = plugin.langText("console.data-loaded", "Loaded %count% protection records (%finished% finished, %active% active).",
+                            "%count%", String.valueOf(loaded.size()), "%finished%", String.valueOf(finished),
+                            "%active%", String.valueOf(loaded.size() - finished));
+                    plugin.getLogger().info(loadedMessage == null ? "Loaded " + loaded.size() + " protection records." : loadedMessage);
+                } catch (Exception e) {
+                    loadHealthy = false;
+                    plugin.getLogger().severe("读取 data.yml 失败，保留原缓存并禁止保存；修复文件后需成功重新加载: " + e.getMessage());
                 }
-                long finished = cache.values().stream().filter(Entry::finished).count();
-                plugin.getLogger().info("已载入 " + cache.size() + " 条新人保护数据"
-                        + "（其中 " + finished + " 人保护已结束，"
-                        + (cache.size() - finished) + " 人仍在保护/未用尽）。");
-            } catch (Throwable t) {
-                plugin.getLogger().warning("读取 data.yml 失败: " + t.getMessage());
             }
         }
     }
 
+    private static long readLong(Map<?, ?> fields, String key) {
+        if (!fields.containsKey(key)) return 0L;
+        Object value = fields.get(key);
+        if (!(value instanceof Byte || value instanceof Short || value instanceof Integer || value instanceof Long)) {
+            throw new IllegalArgumentException(key + " must be a signed 64-bit integer");
+        }
+        return ((Number) value).longValue();
+    }
+
+    private static boolean readBoolean(Map<?, ?> fields, String key) {
+        if (!fields.containsKey(key)) return false;
+        Object value = fields.get(key);
+        if (!(value instanceof Boolean)) throw new IllegalArgumentException(key + " must be boolean");
+        return (Boolean) value;
+    }
+
+    /** 同步保存，供关服和需要明确落盘的调用方使用。 */
     public void save() {
-        synchronized (ioLock) {
+        synchronized (writeLock) {
+            if (!loadHealthy) return;
+            // 在快照前读取版本；之后发生的改动不会被本次保存错误清除。
+            long snapshotRevision = revision.get();
+            List<Entry> snapshot;
+            synchronized (cacheLock) {
+                snapshot = cache.values().stream().map(Entry::snapshot).toList();
+            }
             try {
                 YamlConfiguration yaml = new YamlConfiguration();
-                for (Entry entry : cache.values()) {
+                for (Entry entry : snapshot) {
                     String base = "players." + entry.uuid();
                     yaml.set(base + ".name", entry.name());
                     yaml.set(base + ".used-seconds", entry.usedSeconds());
@@ -232,26 +318,62 @@ public class PlayerDataStore {
                     yaml.set(base + ".admin-paused", entry.adminPaused());
                     yaml.set(base + ".bossbar-hidden", entry.bossBarHidden());
                 }
-                if (!plugin.getDataFolder().isDirectory() && !plugin.getDataFolder().mkdirs()) {
-                    plugin.getLogger().warning("无法创建数据目录: " + plugin.getDataFolder());
-                }
-                yaml.save(file);
-                dirty = false;
-            } catch (IOException e) {
-                plugin.getLogger().warning("保存 data.yml 失败: " + e.getMessage());
-            } catch (Throwable t) {
-                plugin.getLogger().warning("保存 data.yml 异常: " + t);
+                yamlFile.write(yaml);
+                savedRevision = snapshotRevision;
+            } catch (IOException | RuntimeException e) {
+                plugin.getLogger().warning("保存 data.yml 失败（保留待保存状态）: " + e.getMessage());
             }
         }
     }
 
-    /** 标记有改动，等待定时任务落盘（防抖）。 */
+    /** 合并后台保存请求；序列化和磁盘 I/O 不持有玩家缓存锁。 */
+    public void requestSave() {
+        markDirty();
+        if (!loadHealthy) return;
+        saveRequested.set(true);
+        scheduleWriter();
+    }
+
+    private void scheduleWriter() {
+        if (closing || !saveQueued.compareAndSet(false, true)) return;
+        try {
+            writer.execute(() -> {
+                try {
+                    while (saveRequested.getAndSet(false)) {
+                        save();
+                    }
+                } finally {
+                    saveQueued.set(false);
+                    // 补上最后一次检查与清理排队标记之间到达的请求。
+                    if (saveRequested.get()) scheduleWriter();
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            saveQueued.set(false);
+            if (!closing) plugin.getLogger().warning("无法安排数据保存: " + e.getMessage());
+        }
+    }
+
+    /** 停止接受后台请求，等待现有写入，再同步保存最新状态。可重复调用。 */
+    public void close() {
+        closing = true;
+        writer.shutdown();
+        try {
+            if (!writer.awaitTermination(10, TimeUnit.SECONDS)) {
+                plugin.getLogger().warning("数据写入尚未结束，等待最终保存。");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        save();
+    }
+
     public void markDirty() {
-        dirty = true;
+        revision.incrementAndGet();
     }
 
     public boolean isDirty() {
-        return dirty;
+        return revision.get() != savedRevision;
     }
 
     /* ------------------------------------------------------------------ */
@@ -260,22 +382,22 @@ public class PlayerDataStore {
 
     /** 取记录，不存在返回 null。 */
     public Entry get(UUID uuid) {
-        synchronized (ioLock) {
+        synchronized (cacheLock) {
             return cache.get(uuid);
         }
     }
 
     /** 取记录，不存在则创建（首次进服）。 */
     public Entry getOrCreate(UUID uuid, String name) {
-        synchronized (ioLock) {
+        synchronized (cacheLock) {
             Entry entry = cache.get(uuid);
             if (entry == null) {
                 entry = new Entry(uuid, name, 0L, System.currentTimeMillis(), false);
                 cache.put(uuid, entry);
-                dirty = true;
+                markDirty();
             } else if (name != null && !name.equals(entry.name())) {
                 entry.name(name);
-                dirty = true;
+                markDirty();
             }
             return entry;
         }
@@ -283,7 +405,7 @@ public class PlayerDataStore {
 
     /** 全部记录的快照（管理员 list 用）。 */
     public java.util.List<Entry> all() {
-        synchronized (ioLock) {
+        synchronized (cacheLock) {
             return new java.util.ArrayList<>(cache.values());
         }
     }
@@ -292,7 +414,7 @@ public class PlayerDataStore {
         if (name == null || name.isEmpty()) {
             return null;
         }
-        synchronized (ioLock) {
+        synchronized (cacheLock) {
             for (Entry entry : cache.values()) {
                 if (name.equalsIgnoreCase(entry.name())) {
                     return entry;
@@ -304,27 +426,27 @@ public class PlayerDataStore {
 
     /** 清除某玩家的保护记录，使其重新变成新人。 */
     public Entry reset(UUID uuid, String name) {
-        synchronized (ioLock) {
+        synchronized (cacheLock) {
             Entry entry = new Entry(uuid, name == null ? "" : name, 0L, System.currentTimeMillis(), false);
             cache.put(uuid, entry);
-            dirty = true;
+            markDirty();
             return entry;
         }
     }
 
     /** 删除某玩家的记录（下一个进服时重新计算）。 */
     public boolean remove(UUID uuid) {
-        synchronized (ioLock) {
+        synchronized (cacheLock) {
             boolean removed = cache.remove(uuid) != null;
             if (removed) {
-                dirty = true;
+                markDirty();
             }
             return removed;
         }
     }
 
     public int size() {
-        synchronized (ioLock) {
+        synchronized (cacheLock) {
             return cache.size();
         }
     }

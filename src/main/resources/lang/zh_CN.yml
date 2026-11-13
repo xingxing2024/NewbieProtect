@@ -40,9 +40,13 @@ messages:
 #  玩家相关
 # -------------------------------------------------------------------
   join-protected: "&a你正处于新人保护期，还有 &e%time% &a。期间不会被怪物和玩家伤害。"
+  join-inactive: "&7本服务器当前已停用新人保护。"
+  join-not-protected: "&e你当前不受保护（%reason%），剩余 &e%time% &8| &7%timing%"
   join-expired: ""
   join-self-disabled: "&e你上次关闭了新人保护，当前剩余 &e%time%&e。&7%timing%&7。输入 &f/newbie on &7可重新开启。"
 
+  query-self-inactive: "&7本服务器当前已停用新人保护。剩余：%time%"
+  query-self-not-protected: "&e你当前不受保护（%reason%），剩余 &e%time% &8| &7%timing%"
   query-self: "&a你的新人保护剩余：&e%time%"
   query-self-disabled: "&e你的新人保护已关闭 &8| &e剩余 %time% &8| &7%timing% &8| &7输入 &f/newbie on &7可开启"
   query-self-paused: "&e你的新人保护剩余：&e%time% &8| &7(%reason%)"
@@ -72,8 +76,13 @@ messages:
 # -------------------------------------------------------------------
 #  暂停原因（用于 Boss 条 %reason% 和管理员查询）
 # -------------------------------------------------------------------
-  pause-reason-world: "世界 %world% 内不计时"
-  pause-reason-residence: "自己领地内不计时"
+  pause-reason-inactive: "插件已停用"
+  pause-reason-admin: "管理员已冻结保护"
+  pause-reason-self: "玩家已关闭保护"
+  pause-reason-offline: "离线"
+  pause-reason-boss-battle: "Boss 战斗中"
+  pause-reason-world: "世界 %world% 区域规则"
+  pause-reason-residence: "领地区域规则"
 
 # -------------------------------------------------------------------
 #  打 Boss 无效化
@@ -121,6 +130,9 @@ info:
 
 # 状态文字（用于 %state%）
 status:
+  inactive: "&7插件已停用"
+  boss-battle: "&cBoss 战斗中（保护失效）"
+  unprotected: "&e当前不受保护（%reason%&e）"
   protected: "&a保护中"
   protected-offline: "&b保护中 &7(离线，计时暂停)"
   disabled: "&c已关闭（玩家自己关的）"
@@ -147,7 +159,7 @@ list:
 #  /newbie help 帮助界面
 # -------------------------------------------------------------------
 help:
-  title: "  %prefix%%b&l新人保护 &7v%version%"
+  title: "  %prefix%&b&l新人保护 &7v%version%"
   desc: "  &7新人入服后一段时间内免受怪物与玩家伤害"
   player-section: "  &f&l玩家命令"
   cmd-self: "  &b/newbie &8» &7查看自己的剩余保护时间"
@@ -224,12 +236,13 @@ boss-bar:
   title: "&b新人保护中 &7| &e剩余 %time% &8| &7输入 &f/newbie off &7可关闭"
   title-disabled: "&c保护已关闭 &8| &e剩余 %time% &8| &7(%timing%) &8| &7输入 &f/newbie on &7可开启"
   title-paused: "&7(%reason%) &8| &e剩余 %time% &8| &7(%timing%)"
-  title-boss-battle: "&4Boss 战斗中 &7保护失效 &8| &e剩余 %time% &8| &7脱战 %battle% 秒后恢复"
+  title-boss-battle: "&4Boss 战斗中 &7%state% &8| &e剩余 %time% &8| &7脱战 %battle% 秒后恢复"
+  state-unprotected: "不受保护"
   state-on: "保护中"
   # %reason% 在 Boss 战斗状态下显示的文字
   reason-boss-battle: "Boss 战斗中"
   state-disabled: "已关闭"
   timing-note-counting: "关闭期间保护时间照常计算"
   timing-note-paused: "关闭期间计时已暂停"
-  pause-note-counting: "此区域不计时（剩余时间保留）"
+  pause-note-counting: "此区域保护时间照常计算"
   pause-note-paused: "此处保护计时已暂停"

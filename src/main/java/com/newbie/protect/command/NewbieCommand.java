@@ -189,7 +189,7 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
                 }
                 int before = plugin.getManager().bossBarCount();
                 plugin.getManager().clearAllBossBars();
-                plugin.getDataStore().save();
+                plugin.getDataStore().requestSave();
                 plugin.sendConfigMessage(sender, "cleanup-done", "%count%", String.valueOf(before));
                 return true;
             }
@@ -216,16 +216,15 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
                     Player online = Bukkit.getPlayer(entry.uuid());
                     long total = plugin.getProtectDurationSeconds();
                     // 不做上限：可以给某个玩家单独设成比默认更长的时长
-                    entry.usedSeconds(total - seconds);
-                    entry.finished(seconds <= 0L);
+                    plugin.getManager().setRemainingSeconds(entry.uuid(), entry.name(), seconds);
                     plugin.getDataStore().markDirty();
                     if (online != null) {
                         plugin.getManager().refresh(online);
                     }
-                    plugin.getDataStore().save();
+                    plugin.getDataStore().requestSave();
                     plugin.sendConfigMessage(sender, "admin-set",
                             "%player%", entry.name(),
-                            "%time%", ProtectionManager.format(seconds));
+                            "%time%", plugin.formatDuration(seconds));
                 });
                 return true;
 
@@ -235,33 +234,38 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
                 }
                 withTargetAndTime(sender, args, (entry, seconds) -> {
                     long total = plugin.getProtectDurationSeconds();
-                    long left = entry.finished() ? 0L : Math.max(0L, total - entry.usedSeconds());
-                    long now = left + seconds;
+                    long left = plugin.getManager().state(entry.uuid()).remainingSeconds();
+                    long now;
+                    try {
+                        now = Math.addExact(left, seconds);
+                    } catch (ArithmeticException overflow) {
+                        plugin.sendConfigMessage(sender, "bad-time", "%input%", args[2]);
+                        return;
+                    }
                     // add 的上限要看「累加后的结果」，而不是增量本身
                     long limit = plugin.getAdminMaxSeconds();
                     if (limit > 0L && now > limit) {
                         plugin.sendConfigMessage(sender, "admin-limit-exceeded",
-                                "%limit%", ProtectionManager.format(limit),
-                                "%time%", ProtectionManager.format(now),
+                                "%limit%", plugin.formatDuration(limit),
+                                "%time%", plugin.formatDuration(now),
                                 "%input%", args.length > 2 ? args[2] : "");
                         getLoggerSafe("管理员 " + sender.getName() + " 尝试给 " + entry.name()
-                                + " 加 " + ProtectionManager.format(seconds)
-                                + "（结果 " + ProtectionManager.format(now)
-                                + "），超过上限 " + ProtectionManager.format(limit) + "，已拒绝。");
+                                + " 加 " + plugin.formatDuration(seconds)
+                                + "（结果 " + plugin.formatDuration(now)
+                                + "），超过上限 " + plugin.formatDuration(limit) + "，已拒绝。");
                         return;
                     }
-                    entry.usedSeconds(total - now);
-                    entry.finished(false);
+                    plugin.getManager().setRemainingSeconds(entry.uuid(), entry.name(), now);
                     plugin.getDataStore().markDirty();
                     Player online = Bukkit.getPlayer(entry.uuid());
                     if (online != null) {
                         plugin.getManager().refresh(online);
                     }
-                    plugin.getDataStore().save();
+                    plugin.getDataStore().requestSave();
                     plugin.sendConfigMessage(sender, "admin-add",
                             "%player%", entry.name(),
-                            "%delta%", ProtectionManager.format(seconds),
-                            "%time%", ProtectionManager.format(now));
+                            "%delta%", plugin.formatDuration(seconds),
+                            "%time%", plugin.formatDuration(now));
                 });
                 return true;
 
@@ -271,21 +275,20 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
                 }
                 withTargetAndTime(sender, args, (entry, seconds) -> {
                     long total = plugin.getProtectDurationSeconds();
-                    long left = entry.finished() ? 0L : Math.max(0L, total - entry.usedSeconds());
+                    long left = plugin.getManager().state(entry.uuid()).remainingSeconds();
                     // 扣到 0 为止，不会变成负数
                     long now = Math.max(0L, left - seconds);
-                    entry.usedSeconds(total - now);
-                    entry.finished(now <= 0L);
+                    plugin.getManager().setRemainingSeconds(entry.uuid(), entry.name(), now);
                     plugin.getDataStore().markDirty();
                     Player online = Bukkit.getPlayer(entry.uuid());
                     if (online != null) {
                         plugin.getManager().refresh(online);
                     }
-                    plugin.getDataStore().save();
+                    plugin.getDataStore().requestSave();
                     plugin.sendConfigMessage(sender, "admin-take",
                             "%player%", entry.name(),
-                            "%delta%", ProtectionManager.format(seconds),
-                            "%time%", ProtectionManager.format(now));
+                            "%delta%", plugin.formatDuration(seconds),
+                            "%time%", plugin.formatDuration(now));
                 });
                 return true;
 
@@ -300,7 +303,7 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
                     if (online != null) {
                         plugin.getManager().refresh(online);
                     }
-                    plugin.getDataStore().save();
+                    plugin.getDataStore().requestSave();
                     plugin.sendConfigMessage(sender, "admin-paused-msg",
                             "%player%", entry.name());
                 });
@@ -317,7 +320,7 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
                     if (online != null) {
                         plugin.getManager().refresh(online);
                     }
-                    plugin.getDataStore().save();
+                    plugin.getDataStore().requestSave();
                     plugin.sendConfigMessage(sender, "admin-resumed-msg",
                             "%player%", entry.name());
                 });
@@ -330,22 +333,20 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
                 withTarget(sender, args, entry -> {
                     entry.selfDisabled(false);
                     entry.adminPaused(false);
-                    if (entry.finished()) {
-                        entry.usedSeconds(0L);
-                        entry.finished(false);
-                        entry.firstJoin(System.currentTimeMillis());
+                    if (plugin.getManager().state(entry.uuid()).remainingSeconds() <= 0L) {
+                        plugin.getManager().resetRecord(entry.uuid(), entry.name(), plugin.getProtectDurationSeconds());
                     }
                     plugin.getDataStore().markDirty();
                     Player online = Bukkit.getPlayer(entry.uuid());
                     if (online != null) {
                         plugin.getManager().refresh(online);
                     }
-                    plugin.getDataStore().save();
+                    plugin.getDataStore().requestSave();
                     long total = plugin.getProtectDurationSeconds();
-                    long left = Math.max(0L, total - entry.usedSeconds());
+                    long left = plugin.getManager().state(entry.uuid()).remainingSeconds();
                     plugin.sendConfigMessage(sender, "admin-opened",
                             "%player%", entry.name(),
-                            "%time%", ProtectionManager.format(left));
+                            "%time%", plugin.formatDuration(left));
                 });
                 return true;
 
@@ -360,7 +361,7 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
                     if (online != null) {
                         plugin.getManager().refresh(online);
                     }
-                    plugin.getDataStore().save();
+                    plugin.getDataStore().requestSave();
                     plugin.sendConfigMessage(sender, "admin-closed",
                             "%player%", entry.name());
                 });
@@ -372,7 +373,8 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
                 }
                 withTarget(sender, args, entry -> {
                     plugin.getDataStore().remove(entry.uuid());
-                    plugin.getDataStore().save();
+                    plugin.getManager().onRecordCleared(entry.uuid());
+                    plugin.getDataStore().requestSave();
                     plugin.sendConfigMessage(sender, "cleared", "%player%", entry.name());
                 });
                 return true;
@@ -385,15 +387,11 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
                     // grant 重置为「默认时长」，同样受管理员上限约束
                     long grantSeconds = plugin.clampAdminSeconds(plugin.getProtectDurationSeconds());
                     long total = plugin.getProtectDurationSeconds();
-                    entry.usedSeconds(total - grantSeconds);
-                    entry.finished(false);
-                    entry.selfDisabled(false);
-                    entry.adminPaused(false);
-                    entry.firstJoin(System.currentTimeMillis());
-                    plugin.getDataStore().save();
+                    plugin.getManager().resetRecord(entry.uuid(), entry.name(), grantSeconds);
+                    plugin.getDataStore().requestSave();
                     plugin.sendConfigMessage(sender, "granted",
                             "%player%", entry.name(),
-                            "%time%", ProtectionManager.format(grantSeconds));
+                            "%time%", plugin.formatDuration(grantSeconds));
                     Player online = Bukkit.getPlayer(entry.uuid());
                     if (online != null) {
                         plugin.getManager().removeBossBar(entry.uuid());
@@ -413,10 +411,10 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
                     return true;
                 }
                 long total = plugin.getProtectDurationSeconds();
-                long left = entry.finished() ? 0L : Math.max(0L, total - entry.usedSeconds());
+                long left = plugin.getManager().state(entry.uuid()).remainingSeconds();
                 plugin.sendConfigMessage(sender, "query-other",
                         "%player%", entry.name(),
-                        "%time%", ProtectionManager.format(left));
+                        "%time%", plugin.formatDuration(left));
                 return true;
             }
         }
@@ -428,30 +426,22 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
 
     private void showSelf(CommandSender sender) {
         if (!(sender instanceof Player player)) {
-            plugin.sendConfigMessage(sender, "player-only", null);
+            plugin.sendConfigMessage(sender, "player-only");
             return;
         }
-        long left = plugin.getManager().remainingSeconds(player);
-        if (left <= 0L) {
-            plugin.sendConfigMessage(sender, "expired", null);
-        } else if (plugin.getManager().isSelfDisabled(player)) {
-            plugin.sendConfigMessage(sender, "query-self-disabled",
-                    "%time%", ProtectionManager.format(left),
-                    "%timing%", plugin.getManager().timingNote());
-        } else if (plugin.getManager().isPaused(player)) {
-            plugin.sendConfigMessage(sender, "query-self-paused",
-                    "%time%", ProtectionManager.format(left),
-                    "%reason%", plugin.getManager().pauseReason(player));
-        } else {
-            plugin.sendConfigMessage(sender, "query-self",
-                    "%time%", ProtectionManager.format(left));
-        }
+        var state = plugin.getManager().state(player);
+        long left = state.remainingSeconds();
+        String key = left <= 0L ? "expired" : state.protectedNow() ? "query-self"
+                : "inactive".equals(state.statusKey()) ? "query-self-inactive"
+                : plugin.getManager().isSelfDisabled(player) ? "query-self-disabled" : "query-self-not-protected";
+        plugin.sendConfigMessage(sender, key, "%time%", plugin.formatDuration(left),
+                "%reason%", state.pauseReason(), "%timing%", plugin.getManager().timingNote(plugin.getManager().state(player)));
     }
 
     /** 展示单个玩家详情（卡片式）。 */
     private void showInfo(CommandSender sender, PlayerDataStore.Entry entry) {
         long total = plugin.getProtectDurationSeconds();
-        long left = entry.finished() ? 0L : Math.max(0L, total - entry.usedSeconds());
+        long left = plugin.getManager().state(entry.uuid()).remainingSeconds();
         long used = entry.usedSeconds();
         double percent = total <= 0 ? 0 : (left * 100.0 / total);
         Player target = Bukkit.getPlayer(entry.uuid());
@@ -461,19 +451,19 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
         send(sender, target, prefix + plugin.langText("info.header", "&f玩家 &b%player%",
                 "%player%", entry.name()));
         send(sender, target, plugin.langText("info.left", "  &7剩余时间   &a%time% &8(%percent%%%)",
-                "%time%", ProtectionManager.format(left),
+                "%time%", plugin.formatDuration(left),
                 "%percent%", String.format("%.1f", percent)));
         send(sender, target, plugin.langText("info.default-duration", "  &7默认时长   &f%time%",
-                "%time%", ProtectionManager.format(total)));
+                "%time%", plugin.formatDuration(total)));
         if (used < 0L) {
             // 负值 = 管理员额外赠送的时间
             send(sender, target, plugin.langText("info.bonus", "  &7额外赠送   &d+%time%",
-                    "%time%", ProtectionManager.format(-used)));
+                    "%time%", plugin.formatDuration(-used)));
             send(sender, target, plugin.langText("info.used", "  &7已消耗     &f%time%",
-                    "%time%", ProtectionManager.format(0L)));
+                    "%time%", plugin.formatDuration(0L)));
         } else {
             send(sender, target, plugin.langText("info.used", "  &7已消耗     &f%time%",
-                    "%time%", ProtectionManager.format(used)));
+                    "%time%", plugin.formatDuration(used)));
         }
         send(sender, target, plugin.langText("info.status", "  &7状态       %state%",
                 "%state%", stateText(entry)));
@@ -496,24 +486,9 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
     }
 
     private String stateText(PlayerDataStore.Entry entry) {
-        if (entry.finished()) {
-            return plugin.langColor("status.finished", "&8已结束");
-        }
-        if (entry.adminPaused()) {
-            return plugin.langColor("status.admin-paused", "&e已冻结（管理员暂停计时）");
-        }
-        if (entry.selfDisabled()) {
-            return plugin.langColor("status.disabled", "&c已关闭（玩家自己关的）");
-        }
         Player online = Bukkit.getPlayer(entry.uuid());
-        if (online != null && plugin.getManager().isPaused(online)) {
-            return plugin.langColor("status.paused", "&e暂停中（%reason%&e）",
-                    "%reason%", plugin.getManager().pauseReason(online));
-        }
-        if (online == null) {
-            return plugin.langColor("status.protected-offline", "&b保护中 &7(离线，计时暂停)");
-        }
-        return plugin.langColor("status.protected", "&a保护中");
+        var state = online == null ? plugin.getManager().state(entry.uuid()) : plugin.getManager().state(online);
+        return plugin.langColor("status." + state.statusKey(), state.statusKey(), "%reason%", state.pauseReason());
     }
 
     /** 文字进度条。 */
@@ -540,8 +515,8 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
         List<PlayerDataStore.Entry> all = new ArrayList<>(plugin.getDataStore().all());
         // 按剩余时间从少到多排（快到期 / 已结束的在前，方便管理员关注）
         all.sort((a, b) -> {
-            long ra = a.finished() ? 0L : Math.max(0L, total - a.usedSeconds());
-            long rb = b.finished() ? 0L : Math.max(0L, total - b.usedSeconds());
+            long ra = plugin.getManager().state(a.uuid()).remainingSeconds();
+            long rb = plugin.getManager().state(b.uuid()).remainingSeconds();
             return Long.compare(ra, rb);
         });
 
@@ -567,18 +542,15 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
         }
         for (int i = from; i < to; i++) {
             PlayerDataStore.Entry e = all.get(i);
-            long left = e.finished() ? 0L : Math.max(0L, total - e.usedSeconds());
-            String state = e.finished() ? plugin.langColor("list.state-finished", "&8结束")
-                    : e.adminPaused() ? plugin.langColor("list.state-admin-paused", "&e冻结")
-                    : e.selfDisabled() ? plugin.langColor("list.state-disabled", "&c关闭")
-                    : plugin.langColor("list.state-protected", "&a保护");
+            long left = plugin.getManager().state(e.uuid()).remainingSeconds();
+            String state = stateText(e);
             // 按玩家上下文解析 PAPI 变量（离线玩家也能用静态变量）
             send(sender, Bukkit.getPlayer(e.uuid()), plugin.langColor("list.entry",
                     "  &8%index%. &f%player% %state% &7剩余 &f%time%",
                     "%index%", String.valueOf(i + 1),
                     "%player%", pad(e.name(), 16),
                     "%state%", state,
-                    "%time%", ProtectionManager.format(left)));
+                    "%time%", plugin.formatDuration(left)));
         }
         sender.sendMessage(color("&8&m                                                  "));
         if (page < pages) {
@@ -616,9 +588,10 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
             plugin.sendConfigMessage(sender, "need-player", null);
             return;
         }
-        PlayerDataStore.Entry entry = find(args[1]);
+        boolean create = !args[0].equalsIgnoreCase("info") && !args[0].equalsIgnoreCase("clear");
+        PlayerDataStore.Entry entry = find(args[1], create);
         if (entry == null) {
-            plugin.sendConfigMessage(sender, "player-not-found", null);
+            plugin.sendConfigMessage(sender, "player-not-found");
             return;
         }
         action.run(entry);
@@ -626,29 +599,23 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
 
     private void withTargetAndTime(CommandSender sender, String[] args, EntryTimeAction action) {
         if (args.length < 3) {
-            plugin.sendConfigMessage(sender, "need-player-time", null);
-            return;
-        }
-        PlayerDataStore.Entry entry = find(args[1]);
-        if (entry == null) {
-            plugin.sendConfigMessage(sender, "player-not-found", null);
+            plugin.sendConfigMessage(sender, "need-player-time");
             return;
         }
         Long seconds = parseTime(args[2]);
-        if (seconds == null) {
+        if (seconds == null || seconds < 0L) {
             plugin.sendConfigMessage(sender, "bad-time", "%input%", args[2]);
             return;
         }
-        // 管理员操作上限（protection.admin-limit）
         long limit = plugin.getAdminMaxSeconds();
-        if (limit > 0L && seconds > limit) {
-            plugin.sendConfigMessage(sender, "admin-limit-exceeded",
-                    "%limit%", ProtectionManager.format(limit),
-                    "%time%", ProtectionManager.format(seconds),
-                    "%input%", args[2]);
-            getLoggerSafe("管理员 " + sender.getName() + " 尝试给 " + entry.name()
-                    + " 设置 " + ProtectionManager.format(seconds)
-                    + "，超过上限 " + ProtectionManager.format(limit) + "，已拒绝。");
+        if (!args[0].equalsIgnoreCase("take") && limit > 0L && seconds > limit) {
+            plugin.sendConfigMessage(sender, "admin-limit-exceeded", "%limit%", plugin.formatDuration(limit),
+                    "%time%", plugin.formatDuration(seconds), "%input%", args[2]);
+            return;
+        }
+        PlayerDataStore.Entry entry = find(args[1], true);
+        if (entry == null) {
+            plugin.sendConfigMessage(sender, "player-not-found");
             return;
         }
         action.run(entry, seconds);
@@ -734,15 +701,19 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
                 default:
                     return null;
             }
-            total += value * mult;
+            try {
+                total = Math.addExact(total, Math.multiplyExact(value, mult));
+            } catch (ArithmeticException overflow) {
+                return null;
+            }
             matchedAny = true;
         }
         // 结尾还有剩余数字（没有单位）→ 当作秒
         if (num.length() > 0) {
             try {
-                total += Long.parseLong(num.toString());
+                total = Math.addExact(total, Long.parseLong(num.toString()));
                 matchedAny = true;
-            } catch (NumberFormatException e) {
+            } catch (NumberFormatException | ArithmeticException e) {
                 return null;
             }
         }
@@ -750,13 +721,17 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
     }
 
     private PlayerDataStore.Entry find(String name) {
+        return find(name, false);
+    }
+
+    private PlayerDataStore.Entry find(String name, boolean create) {
         Player online = Bukkit.getPlayerExact(name);
         if (online != null) {
             PlayerDataStore.Entry e = plugin.getDataStore().get(online.getUniqueId());
             if (e != null) {
                 return e;
             }
-            return plugin.getDataStore().getOrCreate(online.getUniqueId(), online.getName());
+            return create ? plugin.getDataStore().getOrCreate(online.getUniqueId(), online.getName()) : null;
         }
         return plugin.getDataStore().findByName(name);
     }
@@ -780,7 +755,7 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
             plugin.sendConfigMessage(player, "bar-toggle-failed", null);
             return;
         }
-        plugin.getDataStore().save();
+        plugin.getDataStore().requestSave();
         plugin.sendConfigMessage(player, nowHidden ? "bar-hidden" : "bar-shown", null);
     }
 
@@ -801,15 +776,15 @@ public class NewbieCommand implements CommandExecutor, TabCompleter {
             plugin.sendConfigMessage(player, disabled ? "self-already-off" : "self-already-on", null);
             return;
         }
-        plugin.getDataStore().save();
+        plugin.getDataStore().requestSave();
 
         if (disabled) {
             plugin.sendConfigMessage(player, "self-off",
-                    "%time%", ProtectionManager.format(left),
-                    "%timing%", plugin.getManager().timingNote());
+                    "%time%", plugin.formatDuration(left),
+                    "%timing%", plugin.getManager().timingNote(plugin.getManager().state(player)));
         } else {
             plugin.sendConfigMessage(player, "self-on",
-                    "%time%", ProtectionManager.format(plugin.getManager().remainingSeconds(player)));
+                    "%time%", plugin.formatDuration(plugin.getManager().remainingSeconds(player)));
         }
     }
 

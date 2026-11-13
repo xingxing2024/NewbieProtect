@@ -98,7 +98,7 @@ protection:
   # false = 怪物仍会攻击，但打不掉血
   mob-ignore-protected-player: true
 
-  # 保护期是否在「首次进服」时自动开始
+  # 无插件记录的玩家是否在登录时自动获得保护。false = 仅管理员授予；已有记录继续生效。
   start-on-first-join: true
 
 # -------------------------------------------------------------------
@@ -240,7 +240,7 @@ boss-bar:
   timing-note-counting: "关闭期间保护时间照常计算"
   timing-note-paused: "关闭期间计时已暂停"
   # %timing% 的取值（暂停区域内使用）
-  pause-note-counting: "此区域不计时（剩余时间保留）"
+  pause-note-counting: "此区域保护时间照常计算"
   pause-note-paused: "此处保护计时已暂停"
   # 颜色：PINK / BLUE / RED / GREEN / YELLOW / PURPLE / WHITE
   color: BLUE
